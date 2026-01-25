@@ -11,6 +11,7 @@ export class GameScene extends Phaser.Scene {
   // Game mode (passed from BootScene)
   private letters: string[] = ['D', 'A', 'R', 'B', 'Y']
   private characterName = 'DARBY'
+  private difficulty: 'easy' | 'noJump' | 'hard' = 'hard'
   
   // Touch controls
   private leftBtn!: Phaser.GameObjects.Arc
@@ -56,12 +57,13 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' })
   }
 
-  create(data: { letters?: string[]; name?: string }) {
+  create(data: { letters?: string[]; name?: string; difficulty?: 'easy' | 'noJump' | 'hard' }) {
     const { height } = this.scale
 
     // Get mode from scene data
     if (data.letters) this.letters = data.letters
     if (data.name) this.characterName = data.name
+    if (data.difficulty) this.difficulty = data.difficulty
 
     // Reset state
     this.nextLetterIndex = 0
@@ -78,15 +80,23 @@ export class GameScene extends Phaser.Scene {
     const ground = this.add.rectangle(WORLD_WIDTH / 2, height - 20, WORLD_WIDTH, 40, 0x4a4a4a)
     this.platforms.add(ground)
     
-    // Platforms spread across the level
-    this.platforms.add(this.add.rectangle(200, 450, 150, 20, 0x4a4a4a))
-    this.platforms.add(this.add.rectangle(500, 350, 150, 20, 0x4a4a4a))
-    this.platforms.add(this.add.rectangle(800, 400, 150, 20, 0x4a4a4a))
-    this.platforms.add(this.add.rectangle(1100, 300, 150, 20, 0x4a4a4a))
-    this.platforms.add(this.add.rectangle(1400, 450, 150, 20, 0x4a4a4a))
-    this.platforms.add(this.add.rectangle(1700, 350, 150, 20, 0x4a4a4a))
-    this.platforms.add(this.add.rectangle(2000, 400, 150, 20, 0x4a4a4a))
-    this.platforms.add(this.add.rectangle(2200, 300, 150, 20, 0x4a4a4a))
+    // Add platforms based on difficulty
+    if (this.difficulty === 'easy') {
+      // Easy mode: just a couple platforms
+      this.platforms.add(this.add.rectangle(400, 450, 200, 20, 0x4a4a4a))
+      this.platforms.add(this.add.rectangle(1200, 450, 200, 20, 0x4a4a4a))
+    } else if (this.difficulty === 'hard') {
+      // Hard mode: full platform set
+      this.platforms.add(this.add.rectangle(200, 450, 150, 20, 0x4a4a4a))
+      this.platforms.add(this.add.rectangle(500, 350, 150, 20, 0x4a4a4a))
+      this.platforms.add(this.add.rectangle(800, 400, 150, 20, 0x4a4a4a))
+      this.platforms.add(this.add.rectangle(1100, 300, 150, 20, 0x4a4a4a))
+      this.platforms.add(this.add.rectangle(1400, 450, 150, 20, 0x4a4a4a))
+      this.platforms.add(this.add.rectangle(1700, 350, 150, 20, 0x4a4a4a))
+      this.platforms.add(this.add.rectangle(2000, 400, 150, 20, 0x4a4a4a))
+      this.platforms.add(this.add.rectangle(2200, 300, 150, 20, 0x4a4a4a))
+    }
+    // noJump mode: no platforms, just ground
 
     // Create player
     this.player = this.add.rectangle(100, height - 100, 40, 60, 0x3498db)
@@ -178,28 +188,56 @@ export class GameScene extends Phaser.Scene {
   createTargets() {
     this.targets = []
     
-    // Generate random positions for each target
-    // D is always in the first third, others are randomized across the rest
     const positions: { x: number; y: number }[] = []
+    const groundY = this.scale.height - 80 // Near ground level
     
-    // D gets a position in the first third of the world (so it's findable first)
-    positions.push({
-      x: Phaser.Math.Between(200, WORLD_WIDTH / 3),
-      y: Phaser.Math.Between(150, this.scale.height - 150)
-    })
-    
-    // A, R, B, Y get randomized positions across the rest of the world
-    for (let i = 1; i < this.letters.length; i++) {
+    if (this.difficulty === 'noJump') {
+      // Trilby mode: all targets at ground level, spread evenly
+      const spacing = WORLD_WIDTH / (this.letters.length + 1)
+      for (let i = 0; i < this.letters.length; i++) {
+        positions.push({
+          x: spacing * (i + 1),
+          y: groundY
+        })
+      }
+    } else if (this.difficulty === 'easy') {
+      // Darby mode: targets near ground, first letter in first third
       positions.push({
-        x: Phaser.Math.Between(WORLD_WIDTH / 3, WORLD_WIDTH - 100),
+        x: Phaser.Math.Between(200, WORLD_WIDTH / 3),
+        y: Phaser.Math.Between(groundY - 100, groundY)
+      })
+      
+      for (let i = 1; i < this.letters.length; i++) {
+        positions.push({
+          x: Phaser.Math.Between(WORLD_WIDTH / 3, WORLD_WIDTH - 100),
+          y: Phaser.Math.Between(groundY - 100, groundY)
+        })
+      }
+      
+      // Shuffle non-first positions
+      for (let i = positions.length - 1; i > 1; i--) {
+        const j = Phaser.Math.Between(1, i)
+        ;[positions[i], positions[j]] = [positions[j], positions[i]]
+      }
+    } else {
+      // Hard mode (Marvin): original behavior - targets anywhere
+      positions.push({
+        x: Phaser.Math.Between(200, WORLD_WIDTH / 3),
         y: Phaser.Math.Between(150, this.scale.height - 150)
       })
-    }
-    
-    // Shuffle positions for A, R, B, Y (indices 1-4) so they're not in order
-    for (let i = positions.length - 1; i > 1; i--) {
-      const j = Phaser.Math.Between(1, i)
-      ;[positions[i], positions[j]] = [positions[j], positions[i]]
+      
+      for (let i = 1; i < this.letters.length; i++) {
+        positions.push({
+          x: Phaser.Math.Between(WORLD_WIDTH / 3, WORLD_WIDTH - 100),
+          y: Phaser.Math.Between(150, this.scale.height - 150)
+        })
+      }
+      
+      // Shuffle non-first positions
+      for (let i = positions.length - 1; i > 1; i--) {
+        const j = Phaser.Math.Between(1, i)
+        ;[positions[i], positions[j]] = [positions[j], positions[i]]
+      }
     }
     
     for (let i = 0; i < this.letters.length; i++) {
