@@ -24,7 +24,12 @@ checkForUpdates()
 setInterval(checkForUpdates, 30000)
 
 const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.AUTO,
+  type: Phaser.WEBGL,
+  render: {
+    powerPreference: 'high-performance',
+    antialias: true,
+    roundPixels: true,
+  },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

@@ -2,6 +2,25 @@ import Phaser from 'phaser'
 
 const WORLD_WIDTH = 2400
 
+// State machine enums
+enum PlayerState {
+  Alive = 'alive',
+  Invulnerable = 'invulnerable',
+  Dead = 'dead',
+}
+
+enum ProjectileState {
+  Flying = 'flying',
+  Consumed = 'consumed',
+}
+
+enum TargetState {
+  Idle = 'idle',
+  Preparing = 'preparing',
+  Cooldown = 'cooldown',
+  Destroyed = 'destroyed',
+}
+
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Rectangle
   private playerBody!: Phaser.Physics.Arcade.Body
@@ -38,25 +57,29 @@ export class GameScene extends Phaser.Scene {
   private facingIndicator!: Phaser.GameObjects.Triangle
   
   // Targets with letters
-  private targets: { 
-    circle: Phaser.GameObjects.Arc
+  private targetsGroup!: Phaser.Physics.Arcade.StaticGroup
+  private targetData: Map<Phaser.GameObjects.Arc, {
     letter: string
     label: Phaser.GameObjects.Text
     originX: number
     originY: number
     moveAngle: number
-    lastShotTime: number
-    preparingToFire: boolean
-  }[] = []
+    state: TargetState
+    stateUntil: number
+  }> = new Map()
   private nextLetterIndex = 0
   private letterDisplays: Phaser.GameObjects.Text[] = []
   private winText!: Phaser.GameObjects.Text
   private loseText!: Phaser.GameObjects.Text
   
+  // Player state
+  private playerState = PlayerState.Alive
+  private playerStateUntil = 0
+  private readonly HIT_IFRAMES_MS = 500
+  
   // Health
   private health = 3
   private healthDisplay!: Phaser.GameObjects.Text
-  private isGameOver = false
   
   // Power-up
   private powerUp!: Phaser.GameObjects.Arc
@@ -67,6 +90,9 @@ export class GameScene extends Phaser.Scene {
   // Heart power-ups (Marvin mode only)
   private heartPowerUps: { obj: Phaser.GameObjects.Text; value: number }[] = []
   private readonly MAX_HEALTH = 10
+  
+  // FPS display
+  private fpsText!: Phaser.GameObjects.Text
 
   constructor() {
     super({ key: 'GameScene' })
@@ -83,7 +109,8 @@ export class GameScene extends Phaser.Scene {
     // Reset state
     this.nextLetterIndex = 0
     this.health = 3
-    this.isGameOver = false
+    this.playerState = PlayerState.Alive
+    this.playerStateUntil = 0
 
     // Set world bounds for side-scrolling
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, height)
@@ -129,8 +156,18 @@ export class GameScene extends Phaser.Scene {
     this.projectiles = this.physics.add.group()
     this.enemyProjectiles = this.physics.add.group()
 
+    // Targets group
+    this.targetsGroup = this.physics.add.staticGroup()
+    this.targetData = new Map()
+
     // Create DARBY targets
     this.createTargets()
+
+    // Set up physics overlap for projectile-target collisions
+    this.physics.add.overlap(this.projectiles, this.targetsGroup, this.onProjectileHitTarget, undefined, this)
+    
+    // Set up physics overlap for enemy projectile-player collisions
+    this.physics.add.overlap(this.enemyProjectiles, this.player, this.onEnemyProjectileHitPlayer, undefined, this)
 
     // Create letter displays at top of screen
     this.createLetterDisplays()
@@ -150,7 +187,8 @@ export class GameScene extends Phaser.Scene {
 
     // Camera follows player
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, height)
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1)
+    this.cameras.main.startFollow(this.player, true, 1, 1)
+    this.cameras.main.roundPixels = true
 
     // Win text (hidden initially)
     this.winText = this.add.text(this.scale.width / 2, this.scale.height / 2, '🎉 YOU WIN! 🎉', {
@@ -179,6 +217,14 @@ export class GameScene extends Phaser.Scene {
       strokeThickness: 4,
     }).setOrigin(0.5).setScrollFactor(0).setVisible(false)
 
+    // FPS display
+    this.fpsText = this.add.text(10, this.scale.height - 30, 'FPS: 0', {
+      fontSize: '16px',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 2,
+    }).setScrollFactor(0)
+
     // Keyboard controls
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys()
@@ -206,8 +252,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   createTargets() {
-    this.targets = []
-    
     const positions: { x: number; y: number }[] = []
     const groundY = this.scale.height - 80 // Near ground level
     
@@ -280,6 +324,9 @@ export class GameScene extends Phaser.Scene {
       const { x, y } = positions[i]
       
       const circle = this.add.circle(x, y, 30, 0xff00ff)
+      this.physics.add.existing(circle, true) // Add as static body
+      this.targetsGroup.add(circle)
+      
       const label = this.add.text(x, y, this.letters[i], {
         fontSize: '32px',
         fontFamily: 'Arial Black',
@@ -288,15 +335,14 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 4,
       }).setOrigin(0.5)
       
-      this.targets.push({ 
-        circle, 
+      this.targetData.set(circle, {
         letter: this.letters[i], 
         label,
         originX: x,
         originY: y,
         moveAngle: Phaser.Math.Between(0, 360),
-        lastShotTime: -Phaser.Math.Between(0, 8000), // Randomize initial offset so shots don't sync
-        preparingToFire: false
+        state: TargetState.Idle,
+        stateUntil: this.time.now + Phaser.Math.Between(0, 8000), // Random initial cooldown
       })
     }
   }
@@ -424,8 +470,11 @@ export class GameScene extends Phaser.Scene {
     }
     this.resetWasPressed = resetPressed
 
-    // Don't process other inputs if game over
-    if (this.isGameOver) return
+    // Update player state machine
+    this.updatePlayerState()
+    
+    // Don't process other inputs if dead
+    if (this.playerState === PlayerState.Dead) return
     
     const onGround = this.playerBody.blocked.down
 
@@ -483,172 +532,236 @@ export class GameScene extends Phaser.Scene {
     // Update target movement and behavior
     this.updateTargets()
 
-    // Check collisions
-    this.checkProjectileCollisions()
-    this.checkEnemyProjectileCollisions()
+    // Clean up off-screen projectiles
+    this.cleanupOffscreenProjectiles()
+
+    // Update FPS display
+    this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`)
+  }
+
+  updatePlayerState() {
+    const now = this.time.now
+    
+    // Handle state transitions based on time
+    if (this.playerState === PlayerState.Invulnerable && now >= this.playerStateUntil) {
+      this.playerState = PlayerState.Alive
+      this.player.setAlpha(1)
+    }
+    
+    // Visual feedback for invulnerability (flashing)
+    if (this.playerState === PlayerState.Invulnerable) {
+      this.player.setAlpha(Math.sin(now * 0.02) * 0.3 + 0.7)
+    }
   }
 
   updateTargets() {
     const now = this.time.now
     
-    for (const target of this.targets) {
-      if (!target.circle.active) continue
+    for (const [circle, data] of this.targetData) {
+      if (!circle.active || data.state === TargetState.Destroyed) continue
+      
+      // Update target state machine
+      this.updateTargetState(circle, data, now)
       
       if (this.difficulty === 'easy') {
         // Darby mode: slow movement in small area (radius 50)
-        target.moveAngle += 0.5
+        data.moveAngle += 0.5
         const radius = 50
-        const newX = target.originX + Math.cos(Phaser.Math.DegToRad(target.moveAngle)) * radius
-        const newY = target.originY + Math.sin(Phaser.Math.DegToRad(target.moveAngle * 0.7)) * (radius * 0.5)
-        target.circle.setPosition(newX, newY)
-        target.label.setPosition(newX, newY)
+        const newX = data.originX + Math.cos(Phaser.Math.DegToRad(data.moveAngle)) * radius
+        const newY = data.originY + Math.sin(Phaser.Math.DegToRad(data.moveAngle * 0.7)) * (radius * 0.5)
+        circle.setPosition(newX, newY)
+        data.label.setPosition(newX, newY)
+        // Update static body position
+        const body = circle.body as Phaser.Physics.Arcade.StaticBody
+        body.updateFromGameObject()
         
       } else if (this.difficulty === 'hard') {
         // Marvin mode: larger movement area (radius 100) and random shooting
-        target.moveAngle += 0.8
+        data.moveAngle += 0.8
         const radius = 100
-        const newX = target.originX + Math.cos(Phaser.Math.DegToRad(target.moveAngle)) * radius
-        const newY = target.originY + Math.sin(Phaser.Math.DegToRad(target.moveAngle * 0.6)) * (radius * 0.6)
+        const newX = data.originX + Math.cos(Phaser.Math.DegToRad(data.moveAngle)) * radius
+        const newY = data.originY + Math.sin(Phaser.Math.DegToRad(data.moveAngle * 0.6)) * (radius * 0.6)
         
         // Clamp to world bounds
         const clampedX = Phaser.Math.Clamp(newX, 50, WORLD_WIDTH - 50)
         const clampedY = Phaser.Math.Clamp(newY, 100, this.scale.height - 100)
-        target.circle.setPosition(clampedX, clampedY)
-        target.label.setPosition(clampedX, clampedY)
-        
-        // Random shooting: only if on screen, max once every 8 seconds, very random
-        const camLeft = this.cameras.main.scrollX
-        const camRight = camLeft + this.scale.width
-        const isOnScreen = clampedX > camLeft && clampedX < camRight
-        
-        if (!target.preparingToFire && isOnScreen && now - target.lastShotTime > 8000 && Phaser.Math.Between(0, 500) < 1) {
-          // Start warning - turn orange
-          target.preparingToFire = true
-          target.circle.setFillStyle(0xff8800)
-          
-          // Fire after 0.5 seconds (slower speed for random shots)
-          this.time.delayedCall(500, () => {
-            if (target.circle.active && target.preparingToFire) {
-              this.targetShootsAtPlayer(target.circle.x, target.circle.y, 150)
-              target.lastShotTime = this.time.now
-              target.preparingToFire = false
-              target.circle.setFillStyle(0xff00ff) // Back to pink
-            }
-          })
-        }
+        circle.setPosition(clampedX, clampedY)
+        data.label.setPosition(clampedX, clampedY)
+        // Update static body position
+        const body = circle.body as Phaser.Physics.Arcade.StaticBody
+        body.updateFromGameObject()
       }
       // Trilby mode: no movement
     }
   }
 
-  checkProjectileCollisions() {
-    const camLeft = this.cameras.main.scrollX - 50
-    const camRight = this.cameras.main.scrollX + this.scale.width + 50
+  updateTargetState(circle: Phaser.GameObjects.Arc, data: { state: TargetState; stateUntil: number }, now: number) {
+    const camLeft = this.cameras.main.scrollX
+    const camRight = camLeft + this.scale.width
+    const isOnScreen = circle.x > camLeft && circle.x < camRight
     
-    const toDestroy: Phaser.GameObjects.GameObject[] = []
-    
-    this.projectiles.getChildren().forEach((p) => {
-      const projectile = p as Phaser.GameObjects.Rectangle
-      
-      if (projectile.x < camLeft || projectile.x > camRight) {
-        toDestroy.push(projectile)
-        return
-      }
-      
-      for (const target of this.targets) {
-        if (target.circle.active && Phaser.Geom.Intersects.RectangleToRectangle(
-          projectile.getBounds(),
-          target.circle.getBounds()
-        )) {
-          toDestroy.push(projectile)
-          
-          // Check if this is the correct next letter
-          const expectedLetter = this.letters[this.nextLetterIndex]
-          
-          if (target.letter === expectedLetter) {
-            // Correct letter hit!
-            this.letterDisplays[this.nextLetterIndex].setText(target.letter)
-            this.letterDisplays[this.nextLetterIndex].setColor('#00ff00')
-            target.circle.destroy()
-            target.label.destroy()
-            this.nextLetterIndex++
-            
-            if (this.nextLetterIndex >= this.letters.length) {
-              this.winText.setVisible(true)
-              this.isGameOver = true
-            }
-          } else {
-            // Wrong letter - reaction depends on difficulty
-            // Only retaliate if projectile can trigger retaliation (not blue spray bullets)
-            const canRetaliate = projectile.getData('canRetaliate') !== false
-            if (canRetaliate) {
-              this.onWrongLetter(target)
-            }
-          }
-          break
+    switch (data.state) {
+      case TargetState.Idle:
+        // Only Marvin mode targets shoot randomly
+        if (this.difficulty === 'hard' && isOnScreen && now >= data.stateUntil && Phaser.Math.Between(0, 500) < 1) {
+          data.state = TargetState.Preparing
+          data.stateUntil = now + 500 // 0.5s warning
+          circle.setFillStyle(0xff8800) // Orange warning
         }
-      }
-    })
-    
-    toDestroy.forEach((p) => p.destroy())
-  }
-
-  checkEnemyProjectileCollisions() {
-    const toDestroy: Phaser.GameObjects.GameObject[] = []
-    
-    this.enemyProjectiles.getChildren().forEach((p) => {
-      const projectile = p as Phaser.GameObjects.Rectangle
-      
-      // Check if off screen
-      if (projectile.x < 0 || projectile.x > WORLD_WIDTH) {
-        toDestroy.push(projectile)
-        return
-      }
-      
-      // Check if hits player
-      if (Phaser.Geom.Intersects.RectangleToRectangle(
-        projectile.getBounds(),
-        this.player.getBounds()
-      )) {
-        toDestroy.push(projectile)
-        this.takeDamage()
-      }
-    })
-    
-    toDestroy.forEach((p) => p.destroy())
-  }
-
-  onWrongLetter(target: { circle: Phaser.GameObjects.Arc; letter: string; label: Phaser.GameObjects.Text }) {
-    if (this.difficulty === 'noJump') {
-      // Trilby mode: just shake the target
-      this.shakeTarget(target)
-    } else if (this.difficulty === 'easy') {
-      // Darby mode: shoot horizontally only
-      this.targetShootsHorizontal(target.circle.x, target.circle.y)
-    } else {
-      // Marvin mode: shoot directly at player
-      this.targetShootsAtPlayer(target.circle.x, target.circle.y)
+        break
+        
+      case TargetState.Preparing:
+        if (now >= data.stateUntil) {
+          // Fire and transition to cooldown
+          this.targetShootsAtPlayer(circle.x, circle.y, 150)
+          data.state = TargetState.Cooldown
+          data.stateUntil = now + 8000 // 8s cooldown
+          circle.setFillStyle(0xff00ff) // Back to pink
+        }
+        break
+        
+      case TargetState.Cooldown:
+        if (now >= data.stateUntil) {
+          data.state = TargetState.Idle
+        }
+        break
+        
+      case TargetState.Destroyed:
+        // Terminal state, no transitions
+        break
     }
   }
 
-  shakeTarget(target: { circle: Phaser.GameObjects.Arc; label: Phaser.GameObjects.Text }) {
+  onProjectileHitTarget(projectile: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile, targetCircle: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile) {
+    const proj = projectile as Phaser.GameObjects.Rectangle
+    const circle = targetCircle as Phaser.GameObjects.Arc
+    const data = this.targetData.get(circle)
+    
+    // Guard: check projectile and target states
+    if (!data || !circle.active || data.state === TargetState.Destroyed) return
+    const projState = proj.getData('state') as ProjectileState | undefined
+    if (projState === ProjectileState.Consumed) return
+    
+    // Mark projectile as consumed
+    proj.setData('state', ProjectileState.Consumed)
+    proj.destroy()
+    
+    // Check if this is the correct next letter
+    const expectedLetter = this.letters[this.nextLetterIndex]
+    
+    if (data.letter === expectedLetter) {
+      // Correct letter hit - transition target to destroyed
+      data.state = TargetState.Destroyed
+      this.letterDisplays[this.nextLetterIndex].setText(data.letter)
+      this.letterDisplays[this.nextLetterIndex].setColor('#00ff00')
+      circle.destroy()
+      data.label.destroy()
+      this.nextLetterIndex++
+      
+      if (this.nextLetterIndex >= this.letters.length) {
+        this.winText.setVisible(true)
+        this.playerState = PlayerState.Dead // Use state machine for win too
+      }
+    } else {
+      // Wrong letter - reaction depends on difficulty
+      // Only retaliate if projectile can trigger retaliation (not blue spray bullets)
+      const canRetaliate = proj.getData('canRetaliate') !== false
+      if (canRetaliate) {
+        this.onWrongLetter(circle, data)
+      }
+    }
+  }
+
+  onEnemyProjectileHitPlayer(
+    obj1: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    obj2: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ) {
+    // Guard: player must be alive to take damage
+    if (this.playerState === PlayerState.Dead) return
+    if (this.playerState === PlayerState.Invulnerable) {
+      // Still consume the projectile, but don't take damage
+      const projectile = (obj1 === this.player ? obj2 : obj1) as Phaser.GameObjects.Rectangle
+      if (projectile.active) {
+        const body = projectile.body as Phaser.Physics.Arcade.Body | null
+        if (body) body.enable = false
+        projectile.setActive(false).setVisible(false)
+        this.enemyProjectiles.remove(projectile, true, true)
+      }
+      return
+    }
+    
+    // Determine which object is the projectile (not the player)
+    const projectile = (obj1 === this.player ? obj2 : obj1) as Phaser.GameObjects.Rectangle
+    
+    // Guard: check projectile state
+    const projState = projectile.getData('state') as ProjectileState | undefined
+    if (!projectile.active || projState === ProjectileState.Consumed) return
+    
+    // Mark projectile as consumed and remove
+    projectile.setData('state', ProjectileState.Consumed)
+    const body = projectile.body as Phaser.Physics.Arcade.Body | null
+    if (body) body.enable = false
+    projectile.setActive(false).setVisible(false)
+    this.enemyProjectiles.remove(projectile, true, true)
+    
+    // Transition player to invulnerable and take damage
+    this.playerState = PlayerState.Invulnerable
+    this.playerStateUntil = this.time.now + this.HIT_IFRAMES_MS
+    
+    this.takeDamage()
+  }
+
+  cleanupOffscreenProjectiles() {
+    const camLeft = this.cameras.main.scrollX - 100
+    const camRight = this.cameras.main.scrollX + this.scale.width + 100
+    
+    this.projectiles.getChildren().forEach((p) => {
+      const proj = p as Phaser.GameObjects.Rectangle
+      if (proj.x < camLeft || proj.x > camRight) {
+        proj.destroy()
+      }
+    })
+    
+    this.enemyProjectiles.getChildren().forEach((p) => {
+      const proj = p as Phaser.GameObjects.Rectangle
+      if (proj.x < 0 || proj.x > WORLD_WIDTH) {
+        proj.destroy()
+      }
+    })
+  }
+
+  onWrongLetter(circle: Phaser.GameObjects.Arc, data: { label: Phaser.GameObjects.Text }) {
+    if (this.difficulty === 'noJump') {
+      // Trilby mode: just shake the target
+      this.shakeTarget(circle, data.label)
+    } else if (this.difficulty === 'easy') {
+      // Darby mode: shoot horizontally only
+      this.targetShootsHorizontal(circle.x, circle.y)
+    } else {
+      // Marvin mode: shoot directly at player
+      this.targetShootsAtPlayer(circle.x, circle.y)
+    }
+  }
+
+  shakeTarget(circle: Phaser.GameObjects.Arc, label: Phaser.GameObjects.Text) {
     // Quick shake animation
-    const originalX = target.circle.x
+    const originalX = circle.x
     this.tweens.add({
-      targets: [target.circle, target.label],
+      targets: [circle, label],
       x: originalX + 10,
       duration: 50,
       yoyo: true,
       repeat: 5,
       onComplete: () => {
-        target.circle.setPosition(originalX, target.circle.y)
-        target.label.setPosition(originalX, target.label.y)
+        circle.setPosition(originalX, circle.y)
+        label.setPosition(originalX, label.y)
       }
     })
   }
 
   targetShootsHorizontal(fromX: number, fromY: number) {
     const projectile = this.add.rectangle(fromX, fromY, 15, 8, 0xff0000)
+    projectile.setData('state', ProjectileState.Flying)
     this.enemyProjectiles.add(projectile)
     const body = projectile.body as Phaser.Physics.Arcade.Body
     body.setAllowGravity(false)
@@ -660,6 +773,7 @@ export class GameScene extends Phaser.Scene {
 
   targetShootsAtPlayer(fromX: number, fromY: number, speed = 300) {
     const projectile = this.add.rectangle(fromX, fromY, 15, 8, 0xff0000)
+    projectile.setData('state', ProjectileState.Flying)
     this.enemyProjectiles.add(projectile)
     const body = projectile.body as Phaser.Physics.Arcade.Body
     body.setAllowGravity(false)
@@ -672,17 +786,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   takeDamage() {
-    this.health--
+    this.health = Math.max(0, this.health - 1)
     this.updateHealthDisplay()
     
-    // Flash player red
+    // Flash player red briefly (invulnerability flashing will take over)
     this.player.setFillStyle(0xff0000)
-    this.time.delayedCall(200, () => {
+    this.time.delayedCall(100, () => {
       if (this.player.active) this.player.setFillStyle(0x3498db)
     })
     
     if (this.health <= 0) {
-      this.isGameOver = true
+      this.playerState = PlayerState.Dead
       this.loseText.setVisible(true)
     }
   }
@@ -709,6 +823,7 @@ export class GameScene extends Phaser.Scene {
       6,
       0xffff00
     )
+    projectile.setData('state', ProjectileState.Flying)
     projectile.setData('canRetaliate', true)
     this.projectiles.add(projectile)
     const body = projectile.body as Phaser.Physics.Arcade.Body
@@ -728,6 +843,7 @@ export class GameScene extends Phaser.Scene {
       const isCenter = angle === 0
       const color = isCenter ? 0xffff00 : 0x00ffff
       const projectile = this.add.rectangle(baseX, this.player.y, 10, 5, color)
+      projectile.setData('state', ProjectileState.Flying)
       projectile.setData('canRetaliate', isCenter)
       this.projectiles.add(projectile)
       const body = projectile.body as Phaser.Physics.Arcade.Body
@@ -778,12 +894,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   relocateTargets() {
-    for (const target of this.targets) {
-      if (target.circle.active) {
+    for (const [circle, data] of this.targetData) {
+      if (circle.active) {
         const x = Phaser.Math.Between(100, WORLD_WIDTH - 100)
         const y = Phaser.Math.Between(150, this.scale.height - 150)
-        target.circle.setPosition(x, y)
-        target.label.setPosition(x, y)
+        circle.setPosition(x, y)
+        data.label.setPosition(x, y)
+        data.originX = x
+        data.originY = y
+        // Update static body position
+        const body = circle.body as Phaser.Physics.Arcade.StaticBody
+        body.updateFromGameObject()
       }
     }
   }
