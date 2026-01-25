@@ -1,5 +1,8 @@
 import Phaser from 'phaser'
 
+const WORLD_WIDTH = 2400
+const TARGET_COUNT = 5
+
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Rectangle
   private playerBody!: Phaser.Physics.Arcade.Body
@@ -11,10 +14,13 @@ export class GameScene extends Phaser.Scene {
   private rightBtn!: Phaser.GameObjects.Arc
   private jumpBtn!: Phaser.GameObjects.Arc
   private shootBtn!: Phaser.GameObjects.Arc
-  private touchState = { left: false, right: false, jump: false, shoot: false, newTarget: false }
+  private resetBtn!: Phaser.GameObjects.Arc
+  private newTargetBtn!: Phaser.GameObjects.Arc
+  private touchState = { left: false, right: false, jump: false, shoot: false, newTarget: false, reset: false }
   private jumpWasPressed = false
   private shootWasPressed = false
   private newTargetWasPressed = false
+  private resetWasPressed = false
   
   // Projectiles
   private projectiles!: Phaser.Physics.Arcade.Group
@@ -24,36 +30,45 @@ export class GameScene extends Phaser.Scene {
   // Player facing indicator
   private facingIndicator!: Phaser.GameObjects.Triangle
   
-  // Target
-  private target!: Phaser.GameObjects.Arc
-  private newTargetBtn!: Phaser.GameObjects.Arc
+  // Targets
+  private targets: Phaser.GameObjects.Arc[] = []
+  private targetsRemaining = TARGET_COUNT
+  private winText!: Phaser.GameObjects.Text
 
   constructor() {
     super({ key: 'GameScene' })
   }
 
   create() {
-    const { width, height } = this.scale
+    const { height } = this.scale
+
+    // Set world bounds for side-scrolling
+    this.physics.world.setBounds(0, 0, WORLD_WIDTH, height)
 
     // Create platforms
     this.platforms = this.physics.add.staticGroup()
     
-    // Ground
-    const ground = this.add.rectangle(width / 2, height - 20, width, 40, 0x4a4a4a)
+    // Ground (full world width)
+    const ground = this.add.rectangle(WORLD_WIDTH / 2, height - 20, WORLD_WIDTH, 40, 0x4a4a4a)
     this.platforms.add(ground)
     
-    // Some platforms
+    // Platforms spread across the level
     this.platforms.add(this.add.rectangle(200, 450, 150, 20, 0x4a4a4a))
     this.platforms.add(this.add.rectangle(500, 350, 150, 20, 0x4a4a4a))
-    this.platforms.add(this.add.rectangle(300, 250, 150, 20, 0x4a4a4a))
+    this.platforms.add(this.add.rectangle(800, 400, 150, 20, 0x4a4a4a))
+    this.platforms.add(this.add.rectangle(1100, 300, 150, 20, 0x4a4a4a))
+    this.platforms.add(this.add.rectangle(1400, 450, 150, 20, 0x4a4a4a))
+    this.platforms.add(this.add.rectangle(1700, 350, 150, 20, 0x4a4a4a))
+    this.platforms.add(this.add.rectangle(2000, 400, 150, 20, 0x4a4a4a))
+    this.platforms.add(this.add.rectangle(2200, 300, 150, 20, 0x4a4a4a))
 
-    // Create player (placeholder rectangle - replace with sprite later)
+    // Create player
     this.player = this.add.rectangle(100, height - 100, 40, 60, 0x3498db)
     this.physics.add.existing(this.player)
     this.playerBody = this.player.body as Phaser.Physics.Arcade.Body
     this.playerBody.setCollideWorldBounds(true)
     
-    // Facing indicator (small triangle pointing in direction)
+    // Facing indicator
     this.facingIndicator = this.add.triangle(0, 0, 0, 0, 12, 8, 0, 16, 0xffffff)
 
     // Collisions
@@ -62,9 +77,21 @@ export class GameScene extends Phaser.Scene {
     // Projectiles group
     this.projectiles = this.physics.add.group()
 
-    // Create target (start near ground for easy testing)
-    this.target = this.add.circle(400, height - 80, 25, 0xff00ff)
-    this.physics.add.existing(this.target, true)
+    // Create targets spread across the world
+    this.createTargets()
+
+    // Camera follows player
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, height)
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1)
+
+    // Win text (hidden initially)
+    this.winText = this.add.text(this.scale.width / 2, this.scale.height / 2, '🎉 YOU WIN! 🎉', {
+      fontSize: '64px',
+      fontFamily: 'Arial Black',
+      color: '#ffff00',
+      stroke: '#000000',
+      strokeThickness: 8,
+    }).setOrigin(0.5).setScrollFactor(0).setVisible(false)
 
     // Keyboard controls
     if (this.input.keyboard) {
@@ -75,6 +102,20 @@ export class GameScene extends Phaser.Scene {
     this.createTouchControls()
   }
 
+  createTargets() {
+    this.targets = []
+    this.targetsRemaining = TARGET_COUNT
+    
+    // Spread targets across the world
+    const spacing = WORLD_WIDTH / (TARGET_COUNT + 1)
+    for (let i = 0; i < TARGET_COUNT; i++) {
+      const x = spacing * (i + 1)
+      const y = Phaser.Math.Between(150, this.scale.height - 150)
+      const target = this.add.circle(x, y, 25, 0xff00ff)
+      this.targets.push(target)
+    }
+  }
+
   createTouchControls() {
     const { height } = this.scale
     const btnY = height - 80
@@ -82,6 +123,13 @@ export class GameScene extends Phaser.Scene {
 
     // Enable multi-touch
     this.input.addPointer(1)
+
+    // Reset button (top left)
+    this.resetBtn = this.add.circle(40, 40, 30, 0xffaa00, 0.5)
+      .setScrollFactor(0)
+    this.add.text(40, 40, '↺', { fontSize: '32px' })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
 
     // Left button
     this.leftBtn = this.add.circle(80, btnY, btnRadius, 0x000000, 0.5)
@@ -125,6 +173,7 @@ export class GameScene extends Phaser.Scene {
     this.touchState.jump = false
     this.touchState.shoot = false
     this.touchState.newTarget = false
+    this.touchState.reset = false
 
     const pointers = [this.input.activePointer, this.input.pointer1, this.input.pointer2]
     
@@ -148,6 +197,9 @@ export class GameScene extends Phaser.Scene {
       }
       if (this.newTargetBtn.getBounds().contains(x, y)) {
         this.touchState.newTarget = true
+      }
+      if (this.resetBtn.getBounds().contains(x, y)) {
+        this.touchState.reset = true
       }
     }
   }
@@ -185,12 +237,19 @@ export class GameScene extends Phaser.Scene {
     }
     this.shootWasPressed = shootPressed
 
-    // New target button (only on initial press)
+    // New target button (only on initial press) - relocates remaining targets
     const newTargetPressed = this.touchState.newTarget
     if (newTargetPressed && !this.newTargetWasPressed) {
-      this.spawnTarget()
+      this.relocateTargets()
     }
     this.newTargetWasPressed = newTargetPressed
+
+    // Reset button (only on initial press)
+    const resetPressed = this.touchState.reset
+    if (resetPressed && !this.resetWasPressed) {
+      this.scene.restart()
+    }
+    this.resetWasPressed = resetPressed
 
     // Update facing indicator position
     const indicatorOffsetX = this.facingRight ? 25 : -25
@@ -198,19 +257,42 @@ export class GameScene extends Phaser.Scene {
     this.facingIndicator.setScale(this.facingRight ? 1 : -1, 1)
 
     // Check projectile-target collisions and clean up off-screen projectiles
+    this.checkProjectileCollisions()
+  }
+
+  checkProjectileCollisions() {
+    const camLeft = this.cameras.main.scrollX - 50
+    const camRight = this.cameras.main.scrollX + this.scale.width + 50
+    
     const toDestroy: Phaser.GameObjects.GameObject[] = []
+    
     this.projectiles.getChildren().forEach((p) => {
       const projectile = p as Phaser.GameObjects.Rectangle
-      if (projectile.x < -20 || projectile.x > this.scale.width + 20) {
+      
+      // Clean up off-screen projectiles
+      if (projectile.x < camLeft || projectile.x > camRight) {
         toDestroy.push(projectile)
-      } else if (this.target.active && Phaser.Geom.Intersects.RectangleToRectangle(
-        projectile.getBounds(),
-        this.target.getBounds()
-      )) {
-        toDestroy.push(projectile)
-        this.spawnTarget()
+        return
+      }
+      
+      // Check collision with each active target
+      for (const target of this.targets) {
+        if (target.active && Phaser.Geom.Intersects.RectangleToRectangle(
+          projectile.getBounds(),
+          target.getBounds()
+        )) {
+          toDestroy.push(projectile)
+          target.destroy()
+          this.targetsRemaining--
+          
+          if (this.targetsRemaining <= 0) {
+            this.winText.setVisible(true)
+          }
+          break
+        }
       }
     })
+    
     toDestroy.forEach((p) => p.destroy())
   }
 
@@ -229,15 +311,14 @@ export class GameScene extends Phaser.Scene {
     body.setVelocityX(this.facingRight ? 400 : -400)
   }
 
-  spawnTarget() {
-    const { width, height } = this.scale
-    const margin = 60
-    const x = Phaser.Math.Between(margin, width - margin)
-    const y = Phaser.Math.Between(100, height - 150)
-    
-    // Destroy old target and create new one
-    this.target.destroy()
-    this.target = this.add.circle(x, y, 25, 0xff00ff)
-    this.physics.add.existing(this.target, true)
+  relocateTargets() {
+    // Only relocate targets that are still active
+    for (const target of this.targets) {
+      if (target.active) {
+        const x = Phaser.Math.Between(100, WORLD_WIDTH - 100)
+        const y = Phaser.Math.Between(150, this.scale.height - 150)
+        target.setPosition(x, y)
+      }
+    }
   }
 }
