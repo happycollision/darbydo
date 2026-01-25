@@ -11,6 +11,12 @@ if ! git rev-parse HEAD &>/dev/null; then
   git commit -m "Initial commit"
 fi
 
+# Set version to build timestamp
+VERSION_FILE="public/version.json"
+BUILD_TIME=$(date '+%Y%m%d%H%M%S')
+echo "{\"version\": \"$BUILD_TIME\"}" > $VERSION_FILE
+echo "Version: $BUILD_TIME"
+
 # Build the project
 echo "Building..."
 bun run build
