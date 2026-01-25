@@ -1,13 +1,16 @@
 import Phaser from 'phaser'
 
 const WORLD_WIDTH = 2400
-const DARBY_LETTERS = ['D', 'A', 'R', 'B', 'Y']
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Rectangle
   private playerBody!: Phaser.Physics.Arcade.Body
   private platforms!: Phaser.Physics.Arcade.StaticGroup
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
+  
+  // Game mode (passed from BootScene)
+  private letters: string[] = ['D', 'A', 'R', 'B', 'Y']
+  private characterName = 'DARBY'
   
   // Touch controls
   private leftBtn!: Phaser.GameObjects.Arc
@@ -53,8 +56,12 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' })
   }
 
-  create() {
+  create(data: { letters?: string[]; name?: string }) {
     const { height } = this.scale
+
+    // Get mode from scene data
+    if (data.letters) this.letters = data.letters
+    if (data.name) this.characterName = data.name
 
     // Reset state
     this.nextLetterIndex = 0
@@ -153,9 +160,10 @@ export class GameScene extends Phaser.Scene {
 
   createLetterDisplays() {
     this.letterDisplays = []
-    const startX = this.scale.width / 2 - 100
+    const totalWidth = this.letters.length * 50
+    const startX = (this.scale.width - totalWidth) / 2 + 25
     
-    for (let i = 0; i < DARBY_LETTERS.length; i++) {
+    for (let i = 0; i < this.letters.length; i++) {
       const display = this.add.text(startX + i * 50, 40, '_', {
         fontSize: '48px',
         fontFamily: 'Arial Black',
@@ -181,7 +189,7 @@ export class GameScene extends Phaser.Scene {
     })
     
     // A, R, B, Y get randomized positions across the rest of the world
-    for (let i = 1; i < DARBY_LETTERS.length; i++) {
+    for (let i = 1; i < this.letters.length; i++) {
       positions.push({
         x: Phaser.Math.Between(WORLD_WIDTH / 3, WORLD_WIDTH - 100),
         y: Phaser.Math.Between(150, this.scale.height - 150)
@@ -194,11 +202,11 @@ export class GameScene extends Phaser.Scene {
       ;[positions[i], positions[j]] = [positions[j], positions[i]]
     }
     
-    for (let i = 0; i < DARBY_LETTERS.length; i++) {
+    for (let i = 0; i < this.letters.length; i++) {
       const { x, y } = positions[i]
       
       const circle = this.add.circle(x, y, 30, 0xff00ff)
-      const label = this.add.text(x, y, DARBY_LETTERS[i], {
+      const label = this.add.text(x, y, this.letters[i], {
         fontSize: '32px',
         fontFamily: 'Arial Black',
         color: '#ffffff',
@@ -206,7 +214,7 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 4,
       }).setOrigin(0.5)
       
-      this.targets.push({ circle, letter: DARBY_LETTERS[i], label })
+      this.targets.push({ circle, letter: this.letters[i], label })
     }
   }
 
@@ -371,7 +379,7 @@ export class GameScene extends Phaser.Scene {
           toDestroy.push(projectile)
           
           // Check if this is the correct next letter
-          const expectedLetter = DARBY_LETTERS[this.nextLetterIndex]
+          const expectedLetter = this.letters[this.nextLetterIndex]
           
           if (target.letter === expectedLetter) {
             // Correct letter hit!
@@ -381,7 +389,7 @@ export class GameScene extends Phaser.Scene {
             target.label.destroy()
             this.nextLetterIndex++
             
-            if (this.nextLetterIndex >= DARBY_LETTERS.length) {
+            if (this.nextLetterIndex >= this.letters.length) {
               this.winText.setVisible(true)
               this.isGameOver = true
             }
