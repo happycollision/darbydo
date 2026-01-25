@@ -267,7 +267,7 @@ export class GameScene extends Phaser.Scene {
         originX: x,
         originY: y,
         moveAngle: Phaser.Math.Between(0, 360),
-        lastShotTime: 0
+        lastShotTime: -Phaser.Math.Between(0, 8000) // Randomize initial offset so shots don't sync
       })
     }
   }
@@ -442,9 +442,13 @@ export class GameScene extends Phaser.Scene {
         target.circle.setPosition(clampedX, clampedY)
         target.label.setPosition(clampedX, clampedY)
         
-        // Random shooting: max once every 8 seconds
-        if (now - target.lastShotTime > 8000 && Phaser.Math.Between(0, 100) < 2) {
-          this.targetShootsAtPlayer(target.circle.x, target.circle.y)
+        // Random shooting: only if on screen, max once every 8 seconds, very random
+        const camLeft = this.cameras.main.scrollX
+        const camRight = camLeft + this.scale.width
+        const isOnScreen = clampedX > camLeft && clampedX < camRight
+        
+        if (isOnScreen && now - target.lastShotTime > 8000 && Phaser.Math.Between(0, 500) < 1) {
+          this.targetShootsAtPlayer(clampedX, clampedY)
           target.lastShotTime = now
         }
       }
