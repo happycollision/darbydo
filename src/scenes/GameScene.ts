@@ -63,6 +63,10 @@ export class GameScene extends Phaser.Scene {
   private sprayModeActive = false
   private sprayModeTimer?: Phaser.Time.TimerEvent
   private powerUpIndicator!: Phaser.GameObjects.Text
+  
+  // Heart power-ups (Marvin mode only)
+  private heartPowerUps: { obj: Phaser.GameObjects.Text; value: number }[] = []
+  private readonly MAX_HEALTH = 10
 
   constructor() {
     super({ key: 'GameScene' })
@@ -138,6 +142,11 @@ export class GameScene extends Phaser.Scene {
 
     // Create power-up
     this.createPowerUp()
+    
+    // Create heart power-ups (Marvin mode only)
+    if (this.difficulty === 'hard') {
+      this.createHeartPowerUps()
+    }
 
     // Camera follows player
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, height)
@@ -212,15 +221,23 @@ export class GameScene extends Phaser.Scene {
         })
       }
     } else if (this.difficulty === 'easy') {
-      // Darby mode: targets near ground, first letter in first third
+      // Darby mode: targets near ground, spread into zones
+      // First letter in first third, others spread across remaining zones
       positions.push({
         x: Phaser.Math.Between(200, WORLD_WIDTH / 3),
         y: Phaser.Math.Between(groundY - 100, groundY)
       })
       
+      // Divide remaining world into zones for other letters
+      const remainingLetters = this.letters.length - 1
+      const zoneStart = WORLD_WIDTH / 3
+      const zoneWidth = (WORLD_WIDTH - 100 - zoneStart) / remainingLetters
+      
       for (let i = 1; i < this.letters.length; i++) {
+        const zoneLeft = zoneStart + (i - 1) * zoneWidth
+        const zoneRight = zoneLeft + zoneWidth
         positions.push({
-          x: Phaser.Math.Between(WORLD_WIDTH / 3, WORLD_WIDTH - 100),
+          x: Phaser.Math.Between(zoneLeft + 50, zoneRight - 50),
           y: Phaser.Math.Between(groundY - 100, groundY)
         })
       }
@@ -231,15 +248,23 @@ export class GameScene extends Phaser.Scene {
         ;[positions[i], positions[j]] = [positions[j], positions[i]]
       }
     } else {
-      // Hard mode (Marvin): original behavior - targets anywhere
+      // Hard mode (Marvin): spread targets into zones across the world
+      // First letter in first third, others spread across remaining zones
       positions.push({
         x: Phaser.Math.Between(200, WORLD_WIDTH / 3),
         y: Phaser.Math.Between(150, this.scale.height - 150)
       })
       
+      // Divide remaining world into zones for other letters
+      const remainingLetters = this.letters.length - 1
+      const zoneStart = WORLD_WIDTH / 3
+      const zoneWidth = (WORLD_WIDTH - 100 - zoneStart) / remainingLetters
+      
       for (let i = 1; i < this.letters.length; i++) {
+        const zoneLeft = zoneStart + (i - 1) * zoneWidth
+        const zoneRight = zoneLeft + zoneWidth
         positions.push({
-          x: Phaser.Math.Between(WORLD_WIDTH / 3, WORLD_WIDTH - 100),
+          x: Phaser.Math.Between(zoneLeft + 50, zoneRight - 50),
           y: Phaser.Math.Between(150, this.scale.height - 150)
         })
       }
@@ -288,6 +313,35 @@ export class GameScene extends Phaser.Scene {
       yoyo: true,
       repeat: -1,
     })
+  }
+
+  createHeartPowerUps() {
+    this.heartPowerUps = []
+    
+    // Create one +2 and one +5 heart power-up
+    const powerUpConfigs = [
+      { value: 2, label: '❤️+2' },
+      { value: 5, label: '❤️+5' },
+    ]
+    
+    for (const config of powerUpConfigs) {
+      const x = Phaser.Math.Between(WORLD_WIDTH * 0.2, WORLD_WIDTH * 0.8)
+      const y = Phaser.Math.Between(150, this.scale.height - 150)
+      
+      const obj = this.add.text(x, y, config.label, {
+        fontSize: '28px',
+      }).setOrigin(0.5)
+      
+      this.tweens.add({
+        targets: obj,
+        scale: 1.2,
+        duration: 600,
+        yoyo: true,
+        repeat: -1,
+      })
+      
+      this.heartPowerUps.push({ obj, value: config.value })
+    }
   }
 
   createTouchControls() {
@@ -423,6 +477,9 @@ export class GameScene extends Phaser.Scene {
       this.collectPowerUp()
     }
 
+    // Check heart power-up collection
+    this.checkHeartPowerUpCollection()
+
     // Update target movement and behavior
     this.updateTargets()
 
@@ -522,7 +579,11 @@ export class GameScene extends Phaser.Scene {
             }
           } else {
             // Wrong letter - reaction depends on difficulty
-            this.onWrongLetter(target)
+            // Only retaliate if projectile can trigger retaliation (not blue spray bullets)
+            const canRetaliate = projectile.getData('canRetaliate') !== false
+            if (canRetaliate) {
+              this.onWrongLetter(target)
+            }
           }
           break
         }
@@ -627,7 +688,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateHealthDisplay() {
-    const hearts = '❤️'.repeat(this.health) + '🖤'.repeat(3 - this.health)
+    const hearts = '❤️'.repeat(this.health)
     this.healthDisplay.setText(hearts)
   }
 
@@ -648,6 +709,7 @@ export class GameScene extends Phaser.Scene {
       6,
       0xffff00
     )
+    projectile.setData('canRetaliate', true)
     this.projectiles.add(projectile)
     const body = projectile.body as Phaser.Physics.Arcade.Body
     body.setAllowGravity(false)
@@ -661,7 +723,12 @@ export class GameScene extends Phaser.Scene {
     const angles = [-20, -10, 0, 10, 20]
     
     for (const angle of angles) {
-      const projectile = this.add.rectangle(baseX, this.player.y, 10, 5, 0x00ffff)
+      // Center bullet (angle 0) is yellow and can trigger retaliation
+      // Other bullets are blue and cannot trigger retaliation
+      const isCenter = angle === 0
+      const color = isCenter ? 0xffff00 : 0x00ffff
+      const projectile = this.add.rectangle(baseX, this.player.y, 10, 5, color)
+      projectile.setData('canRetaliate', isCenter)
       this.projectiles.add(projectile)
       const body = projectile.body as Phaser.Physics.Arcade.Body
       body.setAllowGravity(false)
@@ -681,6 +748,32 @@ export class GameScene extends Phaser.Scene {
     this.sprayModeTimer = this.time.delayedCall(15000, () => {
       this.sprayModeActive = false
       this.powerUpIndicator.setVisible(false)
+    })
+  }
+
+  checkHeartPowerUpCollection() {
+    const playerBounds = this.player.getBounds()
+    
+    for (let i = this.heartPowerUps.length - 1; i >= 0; i--) {
+      const heartPowerUp = this.heartPowerUps[i]
+      if (!heartPowerUp.obj.active) continue
+      
+      if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, heartPowerUp.obj.getBounds())) {
+        this.collectHeartPowerUp(heartPowerUp.value)
+        heartPowerUp.obj.destroy()
+        this.heartPowerUps.splice(i, 1)
+      }
+    }
+  }
+
+  collectHeartPowerUp(value: number) {
+    this.health = Math.min(this.health + value, this.MAX_HEALTH)
+    this.updateHealthDisplay()
+    
+    // Flash player green briefly
+    this.player.setFillStyle(0x00ff00)
+    this.time.delayedCall(200, () => {
+      if (this.player.active) this.player.setFillStyle(0x3498db)
     })
   }
 
