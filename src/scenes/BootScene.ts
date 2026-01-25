@@ -1,12 +1,16 @@
 import Phaser from 'phaser'
 
+const BASE_WIDTH = 800
+const BASE_HEIGHT = 600
+
 export class BootScene extends Phaser.Scene {
   constructor() {
     super({ key: 'BootScene' })
   }
 
   create() {
-    const { width, height } = this.scale
+    const width = BASE_WIDTH
+    const height = BASE_HEIGHT
 
     // Title
     this.add.text(width / 2, height / 8, '🦸 DARBY DO! 🦸', {
@@ -24,47 +28,47 @@ export class BootScene extends Phaser.Scene {
       color: '#ffffff',
     }).setOrigin(0.5)
 
-    // Darby button (easiest)
-    const darbyBtn = this.add.rectangle(width / 2, height / 2 - 80, 300, 70, 0x27ae60)
+    // Trilby button (easiest - no jumping)
+    const trilbyBtn = this.add.rectangle(width / 2, height / 2 - 80, 300, 70, 0x3498db)
       .setInteractive({ useHandCursor: true })
-    this.add.text(width / 2, height / 2 - 80, '👦 DARBY', {
+    this.add.text(width / 2, height / 2 - 85, '👧 TRILBY', {
       fontSize: '32px',
       fontFamily: 'Arial Black',
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 4,
     }).setOrigin(0.5)
-    this.add.text(width / 2, height / 2 - 45, '(easy)', {
-      fontSize: '14px',
-      color: '#aaffaa',
-    }).setOrigin(0.5)
-
-    // Trilby button (easy - no jumping)
-    const trilbyBtn = this.add.rectangle(width / 2, height / 2 + 20, 300, 70, 0x3498db)
-      .setInteractive({ useHandCursor: true })
-    this.add.text(width / 2, height / 2 + 20, '👧 TRILBY', {
-      fontSize: '32px',
-      fontFamily: 'Arial Black',
-      color: '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 4,
-    }).setOrigin(0.5)
-    this.add.text(width / 2, height / 2 + 55, '(no jumping)', {
+    this.add.text(width / 2, height / 2 - 60, '(no jumping)', {
       fontSize: '14px',
       color: '#aaddff',
+    }).setOrigin(0.5)
+
+    // Darby button (easy)
+    const darbyBtn = this.add.rectangle(width / 2, height / 2 + 20, 300, 70, 0x27ae60)
+      .setInteractive({ useHandCursor: true })
+    this.add.text(width / 2, height / 2 + 15, '👦 DARBY', {
+      fontSize: '32px',
+      fontFamily: 'Arial Black',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5)
+    this.add.text(width / 2, height / 2 + 40, '(easy)', {
+      fontSize: '14px',
+      color: '#aaffaa',
     }).setOrigin(0.5)
 
     // Marvin button (hard - original mode)
     const marvinBtn = this.add.rectangle(width / 2, height / 2 + 120, 300, 70, 0xe74c3c)
       .setInteractive({ useHandCursor: true })
-    this.add.text(width / 2, height / 2 + 120, '👨 MARVIN', {
+    this.add.text(width / 2, height / 2 + 115, '👨 MARVIN', {
       fontSize: '32px',
       fontFamily: 'Arial Black',
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 4,
     }).setOrigin(0.5)
-    this.add.text(width / 2, height / 2 + 155, '(hard)', {
+    this.add.text(width / 2, height / 2 + 140, '(hard)', {
       fontSize: '14px',
       color: '#ffaaaa',
     }).setOrigin(0.5)

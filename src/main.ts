@@ -25,6 +25,8 @@ setInterval(checkForUpdates, 30000)
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.WEBGL,
+  width: 800,
+  height: 600,
   render: {
     powerPreference: 'high-performance',
     antialias: true,
@@ -33,8 +35,6 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 800,
-    height: 600,
   },
   physics: {
     default: 'arcade',

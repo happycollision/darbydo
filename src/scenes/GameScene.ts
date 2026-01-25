@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
 
 const WORLD_WIDTH = 2400
+const BASE_WIDTH = 800
+const BASE_HEIGHT = 600
 
 // State machine enums
 enum PlayerState {
@@ -105,8 +107,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(data: { letters?: string[]; name?: string; difficulty?: 'easy' | 'noJump' | 'hard' }) {
-    const { height } = this.scale
-
     // Get mode from scene data
     if (data.letters) this.letters = data.letters
     if (data.name) this.characterName = data.name
@@ -119,7 +119,7 @@ export class GameScene extends Phaser.Scene {
     this.playerStateUntil = 0
 
     // Set world bounds for side-scrolling
-    this.physics.world.setBounds(0, 0, WORLD_WIDTH, height)
+    this.physics.world.setBounds(0, 0, WORLD_WIDTH, BASE_HEIGHT)
 
     // Create snowy mountain background
     this.createBackground()
@@ -129,7 +129,7 @@ export class GameScene extends Phaser.Scene {
     
     // Ground (full world width) - tall enough to be above touch controls
     const groundHeight = 120
-    const ground = this.add.rectangle(WORLD_WIDTH / 2, height - groundHeight / 2, WORLD_WIDTH, groundHeight, 0x4a4a4a)
+    const ground = this.add.rectangle(WORLD_WIDTH / 2, BASE_HEIGHT - groundHeight / 2, WORLD_WIDTH, groundHeight, 0x4a4a4a)
     this.platforms.add(ground)
     
     // Add platforms based on difficulty
@@ -151,7 +151,7 @@ export class GameScene extends Phaser.Scene {
     // noJump mode: no platforms, just ground
 
     // Create player (spawn above ground)
-    this.player = this.add.rectangle(100, height - groundHeight - 50, 40, 60, 0x3498db)
+    this.player = this.add.rectangle(100, BASE_HEIGHT - groundHeight - 50, 40, 60, 0x3498db)
     this.physics.add.existing(this.player)
     this.playerBody = this.player.body as Phaser.Physics.Arcade.Body
     this.playerBody.setCollideWorldBounds(true)
@@ -183,7 +183,7 @@ export class GameScene extends Phaser.Scene {
     this.createLetterDisplays()
 
     // Create health display
-    this.healthDisplay = this.add.text(this.scale.width / 2, 80, '❤️❤️❤️', {
+    this.healthDisplay = this.add.text(BASE_WIDTH / 2, 80, '❤️❤️❤️', {
       fontSize: '32px',
     }).setOrigin(0.5).setScrollFactor(0)
 
@@ -196,12 +196,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Camera follows player
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, height)
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, BASE_HEIGHT)
     this.cameras.main.startFollow(this.player, true, 1, 1)
     this.cameras.main.roundPixels = true
 
     // Win text (hidden initially)
-    this.winText = this.add.text(this.scale.width / 2, this.scale.height / 2, '🎉 YOU WIN! 🎉', {
+    this.winText = this.add.text(BASE_WIDTH / 2, BASE_HEIGHT / 2, '🎉 YOU WIN! 🎉', {
       fontSize: '64px',
       fontFamily: 'Arial Black',
       color: '#ffff00',
@@ -210,7 +210,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setVisible(false)
 
     // Lose text (hidden initially)
-    this.loseText = this.add.text(this.scale.width / 2, this.scale.height / 2, '💔 TRY AGAIN! 💔', {
+    this.loseText = this.add.text(BASE_WIDTH / 2, BASE_HEIGHT / 2, '💔 TRY AGAIN! 💔', {
       fontSize: '48px',
       fontFamily: 'Arial Black',
       color: '#ff0000',
@@ -219,7 +219,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setVisible(false)
 
     // Power-up indicator (hidden initially)
-    this.powerUpIndicator = this.add.text(this.scale.width / 2, 120, '🔥 SPRAY MODE 🔥', {
+    this.powerUpIndicator = this.add.text(BASE_WIDTH / 2, 120, '🔥 SPRAY MODE 🔥', {
       fontSize: '24px',
       fontFamily: 'Arial Black',
       color: '#00ffff',
@@ -228,7 +228,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setVisible(false)
 
     // FPS display
-    this.fpsText = this.add.text(10, this.scale.height - 30, 'FPS: 0', {
+    this.fpsText = this.add.text(10, BASE_HEIGHT - 30, 'FPS: 0', {
       fontSize: '16px',
       color: '#ffffff',
       stroke: '#000000',
@@ -245,17 +245,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   createBackground() {
-    const { height } = this.scale
-    
     // Sky gradient (static, doesn't scroll)
     const sky = this.add.graphics()
-    for (let y = 0; y < height; y += 10) {
-      const t = y / height
+    for (let y = 0; y < BASE_HEIGHT; y += 10) {
+      const t = y / BASE_HEIGHT
       const r = Math.floor(135 + t * 20)
       const g = Math.floor(206 + t * 10)
       const b = Math.floor(235 - t * 30)
       sky.fillStyle(Phaser.Display.Color.GetColor(r, g, b))
-      sky.fillRect(0, y, this.scale.width, 10)
+      sky.fillRect(0, y, BASE_WIDTH, 10)
     }
     sky.setScrollFactor(0)
     sky.setDepth(-12)
@@ -268,9 +266,9 @@ export class GameScene extends Phaser.Scene {
       const peakHeight = Phaser.Math.Between(150, 250)
       const baseWidth = Phaser.Math.Between(250, 350)
       this.farMountains.fillTriangle(
-        x, height - 120,
-        x + baseWidth / 2, height - 120 - peakHeight,
-        x + baseWidth, height - 120
+        x, BASE_HEIGHT - 120,
+        x + baseWidth / 2, BASE_HEIGHT - 120 - peakHeight,
+        x + baseWidth, BASE_HEIGHT - 120
       )
     }
     this.farMountains.setScrollFactor(0.2)
@@ -284,14 +282,14 @@ export class GameScene extends Phaser.Scene {
       const peakHeight = Phaser.Math.Between(200, 350)
       const baseWidth = Phaser.Math.Between(350, 500)
       const peakX = x + baseWidth / 2
-      const peakY = height - 120 - peakHeight
+      const peakY = BASE_HEIGHT - 120 - peakHeight
       
       // Mountain body
       this.nearMountains.fillStyle(nearMountainColor)
       this.nearMountains.fillTriangle(
-        x, height - 120,
+        x, BASE_HEIGHT - 120,
         peakX, peakY,
-        x + baseWidth, height - 120
+        x + baseWidth, BASE_HEIGHT - 120
       )
       
       // Snow cap
@@ -314,7 +312,7 @@ export class GameScene extends Phaser.Scene {
   createLetterDisplays() {
     this.letterDisplays = []
     const totalWidth = this.letters.length * 50
-    const startX = (this.scale.width - totalWidth) / 2 + 25
+    const startX = (BASE_WIDTH - totalWidth) / 2 + 25
     
     for (let i = 0; i < this.letters.length; i++) {
       const display = this.add.text(startX + i * 50, 40, '_', {
@@ -330,7 +328,7 @@ export class GameScene extends Phaser.Scene {
 
   createTargets() {
     const positions: { x: number; y: number }[] = []
-    const groundSurface = this.scale.height - 120 // Top of the ground platform
+    const groundSurface = BASE_HEIGHT - 120 // Top of the ground platform
     const groundY = groundSurface - 30 // Targets float just above ground
     
     if (this.difficulty === 'noJump') {
@@ -374,7 +372,7 @@ export class GameScene extends Phaser.Scene {
       // First letter in first third, others spread across remaining zones
       positions.push({
         x: Phaser.Math.Between(200, WORLD_WIDTH / 3),
-        y: Phaser.Math.Between(150, this.scale.height - 150)
+        y: Phaser.Math.Between(150, BASE_HEIGHT - 150)
       })
       
       // Divide remaining world into zones for other letters
@@ -387,7 +385,7 @@ export class GameScene extends Phaser.Scene {
         const zoneRight = zoneLeft + zoneWidth
         positions.push({
           x: Phaser.Math.Between(zoneLeft + 50, zoneRight - 50),
-          y: Phaser.Math.Between(150, this.scale.height - 150)
+          y: Phaser.Math.Between(150, BASE_HEIGHT - 150)
         })
       }
       
@@ -427,7 +425,7 @@ export class GameScene extends Phaser.Scene {
 
   createPowerUp() {
     const x = Phaser.Math.Between(WORLD_WIDTH * 0.3, WORLD_WIDTH * 0.7)
-    const y = Phaser.Math.Between(150, this.scale.height - 150)
+    const y = Phaser.Math.Between(150, BASE_HEIGHT - 150)
     this.powerUp = this.add.circle(x, y, 20, 0x00ffff)
     
     this.tweens.add({
@@ -450,7 +448,7 @@ export class GameScene extends Phaser.Scene {
     
     for (const config of powerUpConfigs) {
       const x = Phaser.Math.Between(WORLD_WIDTH * 0.2, WORLD_WIDTH * 0.8)
-      const y = Phaser.Math.Between(150, this.scale.height - 150)
+      const y = Phaser.Math.Between(150, BASE_HEIGHT - 150)
       
       const obj = this.add.text(x, y, config.label, {
         fontSize: '28px',
@@ -469,8 +467,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   createTouchControls() {
-    const { height } = this.scale
-    const btnY = height - 80
+    const btnY = BASE_HEIGHT - 80
     const btnRadius = 40
 
     this.input.addPointer(1)
@@ -551,8 +548,19 @@ export class GameScene extends Phaser.Scene {
     // Update player state machine
     this.updatePlayerState()
     
-    // Don't process other inputs if dead
-    if (this.playerState === PlayerState.Dead) return
+    // Always update facing indicator to stay with player
+    const indicatorOffsetX = this.facingRight ? 25 : -25
+    this.facingIndicator.setPosition(this.player.x + indicatorOffsetX, this.player.y)
+    this.facingIndicator.setScale(this.facingRight ? 1 : -1, 1)
+
+    // When dead, stop player movement and ignore gameplay inputs
+    // But continue updating birds and FPS display
+    if (this.playerState === PlayerState.Dead) {
+      this.playerBody.setVelocity(0, 0)
+      this.updateBirds()
+      this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`)
+      return
+    }
     
     const onGround = this.playerBody.blocked.down
 
@@ -591,11 +599,6 @@ export class GameScene extends Phaser.Scene {
     }
     this.newTargetWasPressed = newTargetPressed
 
-    // Update facing indicator
-    const indicatorOffsetX = this.facingRight ? 25 : -25
-    this.facingIndicator.setPosition(this.player.x + indicatorOffsetX, this.player.y)
-    this.facingIndicator.setScale(this.facingRight ? 1 : -1, 1)
-
     // Check power-up collection
     if (this.powerUp.active && Phaser.Geom.Intersects.RectangleToRectangle(
       this.player.getBounds(),
@@ -623,7 +626,7 @@ export class GameScene extends Phaser.Scene {
   updateBirds() {
     const now = this.time.now
     const camLeft = this.cameras.main.scrollX
-    const camRight = camLeft + this.scale.width
+    const camRight = camLeft + BASE_WIDTH
     
     // Spawn new bird if it's time
     if (now >= this.nextBirdTime) {
@@ -659,12 +662,12 @@ export class GameScene extends Phaser.Scene {
 
   spawnBird() {
     const camLeft = this.cameras.main.scrollX
-    const camRight = camLeft + this.scale.width
+    const camRight = camLeft + BASE_WIDTH
     
     // Randomly spawn from left or right
     const fromLeft = Phaser.Math.Between(0, 1) === 0
     const x = fromLeft ? camLeft - 50 : camRight + 50
-    const y = Phaser.Math.Between(50, this.scale.height / 3)
+    const y = Phaser.Math.Between(50, BASE_HEIGHT / 3)
     const speed = fromLeft ? Phaser.Math.Between(2, 4) : Phaser.Math.Between(-4, -2)
     
     // Create bird body (small ellipse)
@@ -731,7 +734,7 @@ export class GameScene extends Phaser.Scene {
         
         // Clamp to world bounds
         const clampedX = Phaser.Math.Clamp(newX, 50, WORLD_WIDTH - 50)
-        const clampedY = Phaser.Math.Clamp(newY, 100, this.scale.height - 100)
+        const clampedY = Phaser.Math.Clamp(newY, 100, BASE_HEIGHT - 100)
         circle.setPosition(clampedX, clampedY)
         data.label.setPosition(clampedX, clampedY)
         // Update static body position
@@ -744,7 +747,7 @@ export class GameScene extends Phaser.Scene {
 
   updateTargetState(circle: Phaser.GameObjects.Arc, data: { state: TargetState; stateUntil: number }, now: number) {
     const camLeft = this.cameras.main.scrollX
-    const camRight = camLeft + this.scale.width
+    const camRight = camLeft + BASE_WIDTH
     const isOnScreen = circle.x > camLeft && circle.x < camRight
     
     switch (data.state) {
@@ -860,7 +863,7 @@ export class GameScene extends Phaser.Scene {
 
   cleanupOffscreenProjectiles() {
     const camLeft = this.cameras.main.scrollX - 100
-    const camRight = this.cameras.main.scrollX + this.scale.width + 100
+    const camRight = this.cameras.main.scrollX + BASE_WIDTH + 100
     
     this.projectiles.getChildren().forEach((p) => {
       const proj = p as Phaser.GameObjects.Rectangle
@@ -1044,7 +1047,7 @@ export class GameScene extends Phaser.Scene {
     for (const [circle, data] of this.targetData) {
       if (circle.active) {
         const x = Phaser.Math.Between(100, WORLD_WIDTH - 100)
-        const y = Phaser.Math.Between(150, this.scale.height - 150)
+        const y = Phaser.Math.Between(150, BASE_HEIGHT - 150)
         circle.setPosition(x, y)
         data.label.setPosition(x, y)
         data.originX = x
