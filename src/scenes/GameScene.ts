@@ -108,6 +108,16 @@ export class GameScene extends Phaser.Scene {
   private exitDoor!: Phaser.GameObjects.Rectangle
   private exitDoorGlow!: Phaser.GameObjects.Rectangle
   private exitArrow!: Phaser.GameObjects.Text
+  
+  // Boss fight (Marvin level 3)
+  private isBossLevel = false
+  private boss!: Phaser.GameObjects.Rectangle
+  private bossBody!: Phaser.Physics.Arcade.Body
+  private bossHealth = 21
+  private bossHealthText!: Phaser.GameObjects.Text
+  private bossState: 'idle' | 'attacking' | 'hurt' | 'dead' = 'idle'
+  private bossStateUntil = 0
+  private bossAttackCooldown = 0
 
   constructor() {
     super({ key: 'GameScene' })
@@ -178,28 +188,40 @@ export class GameScene extends Phaser.Scene {
     this.targetsGroup = this.physics.add.staticGroup()
     this.targetData = new Map()
 
-    // Create DARBY targets
-    this.createTargets()
+    // Check if this is a boss level (Marvin level 3)
+    this.isBossLevel = this.difficulty === 'hard' && this.level === 3
+    
+    if (this.isBossLevel) {
+      // Boss fight setup
+      this.createBoss()
+    } else {
+      // Create letter targets
+      this.createTargets()
 
-    // Set up physics overlap for projectile-target collisions
-    this.physics.add.overlap(this.projectiles, this.targetsGroup, this.onProjectileHitTarget, undefined, this)
+      // Set up physics overlap for projectile-target collisions
+      this.physics.add.overlap(this.projectiles, this.targetsGroup, this.onProjectileHitTarget, undefined, this)
+    }
     
     // Set up physics overlap for enemy projectile-player collisions
     this.physics.add.overlap(this.enemyProjectiles, this.player, this.onEnemyProjectileHitPlayer, undefined, this)
 
-    // Create letter displays at top of screen
-    this.createLetterDisplays()
+    // Create letter displays at top of screen (not for boss level)
+    if (!this.isBossLevel) {
+      this.createLetterDisplays()
+    }
 
     // Create health display
     this.healthDisplay = this.add.text(BASE_WIDTH / 2, 80, '❤️❤️❤️', {
       fontSize: '32px',
     }).setOrigin(0.5).setScrollFactor(0)
 
-    // Create power-up
-    this.createPowerUp()
+    // Create power-up (not for boss level)
+    if (!this.isBossLevel) {
+      this.createPowerUp()
+    }
     
-    // Create heart power-ups (Marvin mode only)
-    if (this.difficulty === 'hard') {
+    // Create heart power-ups (Marvin mode only, not boss level)
+    if (this.difficulty === 'hard' && !this.isBossLevel) {
       this.createHeartPowerUps()
     }
 
@@ -716,8 +738,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Update target movement and behavior (disabled during level complete)
-    if (!isLevelComplete) {
+    if (!isLevelComplete && !this.isBossLevel) {
       this.updateTargets()
+    }
+    
+    // Update boss (if boss level)
+    if (this.isBossLevel && !isLevelComplete) {
+      this.updateBoss()
+      this.checkBossProjectileCollisions()
     }
 
     // Check door entry during level complete
@@ -1168,7 +1196,23 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  isFinalLevel(): boolean {
+    // Trilby and Darby: level 2 is final
+    // Marvin: level 3 (boss) is final
+    if (this.difficulty === 'hard') {
+      return this.level >= 3
+    }
+    return this.level >= 2
+  }
+
   onLevelComplete() {
+    // Check if this is the final level
+    if (this.isFinalLevel()) {
+      this.winText.setVisible(true)
+      this.playerState = PlayerState.Dead
+      return
+    }
+    
     this.playerState = PlayerState.LevelComplete
     
     // Show exit arrow and door
@@ -1219,5 +1263,187 @@ export class GameScene extends Phaser.Scene {
         level: this.level + 1,
       })
     }
+  }
+
+  createBoss() {
+    // Reset boss state
+    this.bossHealth = 21
+    this.bossState = 'idle'
+    this.bossStateUntil = 0
+    this.bossAttackCooldown = this.time.now + 2000
+    
+    // Create the gorilla boss (large brown rectangle as body)
+    const groundHeight = 120
+    const bossX = WORLD_WIDTH - 200
+    const bossY = BASE_HEIGHT - groundHeight - 100
+    
+    this.boss = this.add.rectangle(bossX, bossY, 120, 180, 0x8B4513)
+    this.physics.add.existing(this.boss)
+    this.bossBody = this.boss.body as Phaser.Physics.Arcade.Body
+    this.bossBody.setCollideWorldBounds(true)
+    this.bossBody.setImmovable(true)
+    
+    // Add gorilla face details
+    const face = this.add.rectangle(bossX, bossY - 30, 80, 60, 0x654321)
+    const leftEye = this.add.circle(bossX - 20, bossY - 40, 10, 0xffffff)
+    const rightEye = this.add.circle(bossX + 20, bossY - 40, 10, 0xffffff)
+    const leftPupil = this.add.circle(bossX - 20, bossY - 40, 5, 0x000000)
+    const rightPupil = this.add.circle(bossX + 20, bossY - 40, 5, 0x000000)
+    const nose = this.add.ellipse(bossX, bossY - 20, 30, 20, 0x333333)
+    
+    // Store face parts for animation
+    this.boss.setData('faceParts', [face, leftEye, rightEye, leftPupil, rightPupil, nose])
+    
+    // Boss health display
+    this.bossHealthText = this.add.text(BASE_WIDTH / 2, 40, '🦍 BOSS: 21/21', {
+      fontSize: '28px',
+      fontFamily: 'Arial Black',
+      color: '#ff0000',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5).setScrollFactor(0)
+    
+    // Collider with platforms
+    this.physics.add.collider(this.boss, this.platforms)
+  }
+
+  updateBoss() {
+    if (!this.isBossLevel || this.bossState === 'dead') return
+    
+    const now = this.time.now
+    const faceParts = this.boss.getData('faceParts') as Phaser.GameObjects.Shape[]
+    
+    // Update face parts position to follow boss
+    if (faceParts) {
+      const bossX = this.boss.x
+      const bossY = this.boss.y
+      faceParts[0].setPosition(bossX, bossY - 30) // face
+      faceParts[1].setPosition(bossX - 20, bossY - 40) // left eye
+      faceParts[2].setPosition(bossX + 20, bossY - 40) // right eye
+      faceParts[3].setPosition(bossX - 20, bossY - 40) // left pupil
+      faceParts[4].setPosition(bossX + 20, bossY - 40) // right pupil
+      faceParts[5].setPosition(bossX, bossY - 20) // nose
+    }
+    
+    // Boss AI
+    if (this.bossState === 'hurt' && now >= this.bossStateUntil) {
+      this.bossState = 'idle'
+      this.boss.setFillStyle(0x8B4513)
+    }
+    
+    if (this.bossState === 'attacking' && now >= this.bossStateUntil) {
+      this.bossState = 'idle'
+    }
+    
+    // Move towards player
+    if (this.bossState === 'idle') {
+      const distToPlayer = this.player.x - this.boss.x
+      if (Math.abs(distToPlayer) > 150) {
+        this.bossBody.setVelocityX(distToPlayer > 0 ? 80 : -80)
+      } else {
+        this.bossBody.setVelocityX(0)
+        
+        // Attack if close enough and cooldown passed
+        if (now >= this.bossAttackCooldown) {
+          this.bossAttack()
+        }
+      }
+    }
+    
+    // Check if player touches boss (contact damage)
+    if (this.playerState === PlayerState.Alive) {
+      const playerBounds = this.player.getBounds()
+      const bossBounds = this.boss.getBounds()
+      if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, bossBounds)) {
+        this.playerState = PlayerState.Invulnerable
+        this.playerStateUntil = now + this.HIT_IFRAMES_MS
+        this.takeDamage()
+        // Knockback
+        this.playerBody.setVelocityX(this.player.x < this.boss.x ? -300 : 300)
+        this.playerBody.setVelocityY(-200)
+      }
+    }
+  }
+
+  bossAttack() {
+    this.bossState = 'attacking'
+    this.bossStateUntil = this.time.now + 800
+    this.bossAttackCooldown = this.time.now + 2000
+    
+    // Random attack: smack (horizontal) or kick (diagonal down)
+    const attackType = Phaser.Math.Between(0, 1) === 0 ? 'smack' : 'kick'
+    
+    // Flash boss red during attack
+    this.boss.setFillStyle(0xff6600)
+    
+    // Create attack projectile
+    const attackX = this.boss.x + (this.player.x < this.boss.x ? -80 : 80)
+    const attackY = attackType === 'smack' ? this.boss.y - 20 : this.boss.y + 40
+    
+    const projectile = this.add.rectangle(attackX, attackY, 40, 30, 0xff4444)
+    projectile.setData('state', ProjectileState.Flying)
+    this.enemyProjectiles.add(projectile)
+    const body = projectile.body as Phaser.Physics.Arcade.Body
+    body.setAllowGravity(false)
+    
+    const dirX = this.player.x - this.boss.x
+    const dirY = attackType === 'kick' ? 100 : 0
+    const speed = 250
+    const length = Math.sqrt(dirX * dirX + dirY * dirY) || 1
+    body.setVelocity((dirX / length) * speed, (dirY / length) * speed + (attackType === 'kick' ? 100 : 0))
+    
+    // Destroy projectile after 1 second
+    this.time.delayedCall(1000, () => {
+      if (projectile.active) projectile.destroy()
+    })
+  }
+
+  onProjectileHitBoss(projectile: Phaser.GameObjects.Rectangle) {
+    if (this.bossState === 'dead') return
+    
+    // Mark projectile as consumed
+    projectile.setData('state', ProjectileState.Consumed)
+    projectile.destroy()
+    
+    // Damage boss
+    this.bossHealth--
+    this.bossHealthText.setText(`🦍 BOSS: ${this.bossHealth}/21`)
+    
+    // Hurt state
+    this.bossState = 'hurt'
+    this.bossStateUntil = this.time.now + 200
+    this.boss.setFillStyle(0xffffff)
+    
+    // Check if boss defeated
+    if (this.bossHealth <= 0) {
+      this.bossState = 'dead'
+      this.boss.setFillStyle(0x444444)
+      this.bossHealthText.setText('🦍 DEFEATED!')
+      
+      // Hide boss face
+      const faceParts = this.boss.getData('faceParts') as Phaser.GameObjects.Shape[]
+      if (faceParts) {
+        faceParts.forEach(part => part.setVisible(false))
+      }
+      
+      // Trigger level complete
+      this.onLevelComplete()
+    }
+  }
+
+  checkBossProjectileCollisions() {
+    if (!this.isBossLevel || this.bossState === 'dead') return
+    
+    const bossBounds = this.boss.getBounds()
+    
+    this.projectiles.getChildren().forEach((p) => {
+      const proj = p as Phaser.GameObjects.Rectangle
+      const projState = proj.getData('state') as ProjectileState
+      if (projState === ProjectileState.Consumed) return
+      
+      if (Phaser.Geom.Intersects.RectangleToRectangle(proj.getBounds(), bossBounds)) {
+        this.onProjectileHitBoss(proj)
+      }
+    })
   }
 }
