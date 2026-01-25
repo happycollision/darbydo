@@ -432,8 +432,8 @@ export class GameScene extends Phaser.Scene {
               this.isGameOver = true
             }
           } else {
-            // Wrong letter - target shoots back!
-            this.targetShootsBack(target.circle.x, target.circle.y)
+            // Wrong letter - reaction depends on difficulty
+            this.onWrongLetter(target)
           }
           break
         }
@@ -468,13 +468,53 @@ export class GameScene extends Phaser.Scene {
     toDestroy.forEach((p) => p.destroy())
   }
 
-  targetShootsBack(fromX: number, fromY: number) {
+  onWrongLetter(target: { circle: Phaser.GameObjects.Arc; letter: string; label: Phaser.GameObjects.Text }) {
+    if (this.difficulty === 'noJump') {
+      // Trilby mode: just shake the target
+      this.shakeTarget(target)
+    } else if (this.difficulty === 'easy') {
+      // Darby mode: shoot horizontally only
+      this.targetShootsHorizontal(target.circle.x, target.circle.y)
+    } else {
+      // Marvin mode: shoot directly at player
+      this.targetShootsAtPlayer(target.circle.x, target.circle.y)
+    }
+  }
+
+  shakeTarget(target: { circle: Phaser.GameObjects.Arc; label: Phaser.GameObjects.Text }) {
+    // Quick shake animation
+    const originalX = target.circle.x
+    this.tweens.add({
+      targets: [target.circle, target.label],
+      x: originalX + 10,
+      duration: 50,
+      yoyo: true,
+      repeat: 5,
+      onComplete: () => {
+        target.circle.setPosition(originalX, target.circle.y)
+        target.label.setPosition(originalX, target.label.y)
+      }
+    })
+  }
+
+  targetShootsHorizontal(fromX: number, fromY: number) {
     const projectile = this.add.rectangle(fromX, fromY, 15, 8, 0xff0000)
     this.enemyProjectiles.add(projectile)
     const body = projectile.body as Phaser.Physics.Arcade.Body
     body.setAllowGravity(false)
     
-    // Shoot toward player
+    // Shoot horizontally toward player (no vertical component)
+    const dirX = this.player.x > fromX ? 1 : -1
+    body.setVelocity(dirX * 300, 0)
+  }
+
+  targetShootsAtPlayer(fromX: number, fromY: number) {
+    const projectile = this.add.rectangle(fromX, fromY, 15, 8, 0xff0000)
+    this.enemyProjectiles.add(projectile)
+    const body = projectile.body as Phaser.Physics.Arcade.Body
+    body.setAllowGravity(false)
+    
+    // Shoot toward player at any angle
     const dirX = this.player.x - fromX
     const dirY = this.player.y - fromY
     const length = Math.sqrt(dirX * dirX + dirY * dirY)
