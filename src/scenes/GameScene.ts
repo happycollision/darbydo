@@ -123,23 +123,26 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' })
   }
 
-  create(data: { letters?: string[]; name?: string; difficulty?: 'easy' | 'noJump' | 'hard'; level?: number }) {
+  create(data: { letters?: string[]; name?: string; difficulty?: 'easy' | 'noJump' | 'hard'; level?: number; health?: number }) {
     // Get mode from scene data
     if (data.letters) this.letters = data.letters
     if (data.name) this.characterName = data.name
     if (data.difficulty) this.difficulty = data.difficulty
     this.level = data.level ?? 1
+    
+    // Check if this is a boss level (Marvin level 3) - set early for background
+    this.isBossLevel = this.difficulty === 'hard' && this.level === 3
 
     // Reset state
     this.nextLetterIndex = 0
-    this.health = 3
+    this.health = data.health ?? 3 // Keep health from previous level, or start with 3
     this.playerState = PlayerState.Alive
     this.playerStateUntil = 0
 
     // Set world bounds for side-scrolling
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, BASE_HEIGHT)
 
-    // Create snowy mountain background
+    // Create background based on level
     this.createBackground()
 
     // Create platforms
@@ -189,8 +192,6 @@ export class GameScene extends Phaser.Scene {
     this.targetData = new Map()
 
     // Check if this is a boss level (Marvin level 3)
-    this.isBossLevel = this.difficulty === 'hard' && this.level === 3
-    
     if (this.isBossLevel) {
       // Boss fight setup
       this.createBoss()
@@ -220,10 +221,8 @@ export class GameScene extends Phaser.Scene {
       this.createPowerUp()
     }
     
-    // Create heart power-ups (Marvin mode only, not boss level)
-    if (this.difficulty === 'hard' && !this.isBossLevel) {
-      this.createHeartPowerUps()
-    }
+    // Create heart power-ups on all levels
+    this.createHeartPowerUps()
 
     // Camera follows player
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, BASE_HEIGHT)
@@ -282,14 +281,30 @@ export class GameScene extends Phaser.Scene {
     // Keyboard controls
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys()
+      
+      // Dev shortcuts: 1, 2, 3 to jump to levels
+      this.input.keyboard.on('keydown-ONE', () => this.jumpToLevel(1))
+      this.input.keyboard.on('keydown-TWO', () => this.jumpToLevel(2))
+      this.input.keyboard.on('keydown-THREE', () => this.jumpToLevel(3))
     }
 
     // Create touch controls
     this.createTouchControls()
   }
 
+  jumpToLevel(level: number) {
+    this.scene.restart({
+      letters: this.letters,
+      name: this.characterName,
+      difficulty: this.difficulty,
+      level: level,
+    })
+  }
+
   createBackground() {
-    if (this.level % 2 === 0) {
+    if (this.isBossLevel) {
+      this.createJungleBackground()
+    } else if (this.level % 2 === 0) {
       this.createForestBackground()
     } else {
       this.createMountainBackground()
@@ -433,6 +448,90 @@ export class GameScene extends Phaser.Scene {
     this.nearMountains.setDepth(-10)
   }
 
+  createJungleBackground() {
+    // Dark jungle sky (filtered through canopy)
+    const sky = this.add.graphics()
+    for (let y = 0; y < BASE_HEIGHT; y += 10) {
+      const t = y / BASE_HEIGHT
+      const r = Math.floor(40 + t * 30)
+      const g = Math.floor(80 + t * 40)
+      const b = Math.floor(40 + t * 20)
+      sky.fillStyle(Phaser.Display.Color.GetColor(r, g, b))
+      sky.fillRect(0, y, BASE_WIDTH, 10)
+    }
+    sky.setScrollFactor(0)
+    sky.setDepth(-12)
+    
+    // Dense jungle trees in background - slow parallax (0.2)
+    this.farMountains = this.add.graphics()
+    for (let x = 0; x < WORLD_WIDTH * 1.5; x += 60) {
+      const treeHeight = Phaser.Math.Between(200, 350)
+      
+      // Dark tree trunk
+      this.farMountains.fillStyle(0x2a1a0a)
+      this.farMountains.fillRect(x + 15, BASE_HEIGHT - 120 - 50, 20, 50)
+      
+      // Dense foliage (darker green)
+      this.farMountains.fillStyle(0x1a4a1a)
+      this.farMountains.fillCircle(x + 25, BASE_HEIGHT - 120 - treeHeight * 0.4, 40)
+      this.farMountains.fillCircle(x + 10, BASE_HEIGHT - 120 - treeHeight * 0.3, 35)
+      this.farMountains.fillCircle(x + 40, BASE_HEIGHT - 120 - treeHeight * 0.35, 30)
+    }
+    this.farMountains.setScrollFactor(0.2)
+    this.farMountains.setDepth(-11)
+    
+    // Foreground jungle with vines - medium parallax (0.5)
+    this.nearMountains = this.add.graphics()
+    for (let x = -50; x < WORLD_WIDTH * 1.2; x += 150) {
+      const treeHeight = Phaser.Math.Between(300, 450)
+      
+      // Thick tree trunk
+      this.nearMountains.fillStyle(0x3d2817)
+      this.nearMountains.fillRect(x + 30, BASE_HEIGHT - 120 - 80, 40, 80)
+      
+      // Large canopy
+      this.nearMountains.fillStyle(0x2d6a2d)
+      this.nearMountains.fillCircle(x + 50, BASE_HEIGHT - 120 - treeHeight * 0.5, 70)
+      this.nearMountains.fillCircle(x + 20, BASE_HEIGHT - 120 - treeHeight * 0.4, 55)
+      this.nearMountains.fillCircle(x + 80, BASE_HEIGHT - 120 - treeHeight * 0.45, 50)
+      
+      // Hanging vines
+      this.nearMountains.lineStyle(3, 0x228822)
+      for (let v = 0; v < 4; v++) {
+        const vineX = x + 20 + v * 25
+        const vineStartY = BASE_HEIGHT - 120 - treeHeight * 0.3
+        const vineLength = Phaser.Math.Between(100, 200)
+        
+        // Wavy vine
+        this.nearMountains.beginPath()
+        this.nearMountains.moveTo(vineX, vineStartY)
+        for (let vy = 0; vy < vineLength; vy += 20) {
+          const wave = Math.sin(vy * 0.1) * 10
+          this.nearMountains.lineTo(vineX + wave, vineStartY + vy)
+        }
+        this.nearMountains.strokePath()
+      }
+    }
+    this.nearMountains.setScrollFactor(0.5)
+    this.nearMountains.setDepth(-10)
+    
+    // Extra foreground vines hanging from top (no scroll)
+    const foregroundVines = this.add.graphics()
+    foregroundVines.lineStyle(4, 0x116611)
+    for (let x = 50; x < BASE_WIDTH; x += 120) {
+      const vineLength = Phaser.Math.Between(80, 150)
+      foregroundVines.beginPath()
+      foregroundVines.moveTo(x, 0)
+      for (let vy = 0; vy < vineLength; vy += 15) {
+        const wave = Math.sin(vy * 0.15 + x * 0.01) * 15
+        foregroundVines.lineTo(x + wave, vy)
+      }
+      foregroundVines.strokePath()
+    }
+    foregroundVines.setScrollFactor(0)
+    foregroundVines.setDepth(-9)
+  }
+
   createLetterDisplays() {
     this.letterDisplays = []
     const totalWidth = this.letters.length * 50
@@ -564,11 +663,29 @@ export class GameScene extends Phaser.Scene {
   createHeartPowerUps() {
     this.heartPowerUps = []
     
-    // Create one +2 and one +5 heart power-up
-    const powerUpConfigs = [
-      { value: 2, label: '❤️+2' },
-      { value: 5, label: '❤️+5' },
-    ]
+    // More hearts on higher levels
+    const powerUpConfigs: { value: number; label: string }[] = []
+    
+    // Level 1: 1 heart (+1)
+    // Level 2: 2 hearts (+1 and +2)
+    // Level 3+: 4 hearts (+1, +1, +2, +3)
+    if (this.level >= 3) {
+      powerUpConfigs.push(
+        { value: 1, label: '❤️+1' },
+        { value: 1, label: '❤️+1' },
+        { value: 2, label: '❤️+2' },
+        { value: 3, label: '❤️+3' },
+      )
+    } else if (this.level === 2) {
+      powerUpConfigs.push(
+        { value: 1, label: '❤️+1' },
+        { value: 2, label: '❤️+2' },
+      )
+    } else {
+      powerUpConfigs.push(
+        { value: 1, label: '❤️+1' },
+      )
+    }
     
     for (const config of powerUpConfigs) {
       const x = Phaser.Math.Between(WORLD_WIDTH * 0.2, WORLD_WIDTH * 0.8)
@@ -1255,12 +1372,13 @@ export class GameScene extends Phaser.Scene {
     const doorBounds = this.exitDoor.getBounds()
     
     if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, doorBounds)) {
-      // Transition to next level
+      // Transition to next level, keeping current health
       this.scene.restart({
         letters: this.letters,
         name: this.characterName,
         difficulty: this.difficulty,
         level: this.level + 1,
+        health: this.health,
       })
     }
   }
@@ -1275,35 +1393,50 @@ export class GameScene extends Phaser.Scene {
     // Create the gorilla boss (large brown rectangle as body)
     const groundHeight = 120
     const bossX = WORLD_WIDTH - 200
-    const bossY = BASE_HEIGHT - groundHeight - 100
+    const bossY = BASE_HEIGHT - groundHeight - 90 // Center of boss body
     
     this.boss = this.add.rectangle(bossX, bossY, 120, 180, 0x8B4513)
     this.physics.add.existing(this.boss)
     this.bossBody = this.boss.body as Phaser.Physics.Arcade.Body
     this.bossBody.setCollideWorldBounds(true)
-    this.bossBody.setImmovable(true)
+    this.bossBody.setImmovable(false) // Allow boss to move/jump
+    this.bossBody.checkCollision.left = false
+    this.bossBody.checkCollision.right = false
     
-    // Add gorilla face details
-    const face = this.add.rectangle(bossX, bossY - 30, 80, 60, 0x654321)
-    const leftEye = this.add.circle(bossX - 20, bossY - 40, 10, 0xffffff)
-    const rightEye = this.add.circle(bossX + 20, bossY - 40, 10, 0xffffff)
-    const leftPupil = this.add.circle(bossX - 20, bossY - 40, 5, 0x000000)
-    const rightPupil = this.add.circle(bossX + 20, bossY - 40, 5, 0x000000)
-    const nose = this.add.ellipse(bossX, bossY - 20, 30, 20, 0x333333)
+    // Add gorilla face at TOP of body
+    const face = this.add.rectangle(bossX, bossY - 60, 80, 60, 0x654321)
+    const leftEye = this.add.circle(bossX - 20, bossY - 70, 10, 0xffffff)
+    const rightEye = this.add.circle(bossX + 20, bossY - 70, 10, 0xffffff)
+    const leftPupil = this.add.circle(bossX - 20, bossY - 70, 5, 0x000000)
+    const rightPupil = this.add.circle(bossX + 20, bossY - 70, 5, 0x000000)
+    const nose = this.add.ellipse(bossX, bossY - 50, 30, 20, 0x333333)
     
-    // Store face parts for animation
-    this.boss.setData('faceParts', [face, leftEye, rightEye, leftPupil, rightPupil, nose])
+    // Add frown (angled eyebrows - angry, not worried)
+    const leftBrow = this.add.rectangle(bossX - 20, bossY - 82, 20, 4, 0x000000)
+    leftBrow.setAngle(20) // Angled down on outer edge
+    const rightBrow = this.add.rectangle(bossX + 20, bossY - 82, 20, 4, 0x000000)
+    rightBrow.setAngle(-20) // Angled down on outer edge
     
-    // Boss health display
+    // Add hands (always visible, positioned at sides)
+    const leftHand = this.add.rectangle(bossX - 80, bossY + 20, 40, 50, 0x8B4513)
+    const rightHand = this.add.rectangle(bossX + 80, bossY + 20, 40, 50, 0x8B4513)
+    
+    // Store face parts and hands for animation
+    this.boss.setData('faceParts', [face, leftEye, rightEye, leftPupil, rightPupil, nose, leftBrow, rightBrow])
+    this.boss.setData('hands', [leftHand, rightHand])
+    
+    // Boss health display (hidden until boss appears on screen)
     this.bossHealthText = this.add.text(BASE_WIDTH / 2, 40, '🦍 BOSS: 21/21', {
       fontSize: '28px',
       fontFamily: 'Arial Black',
       color: '#ff0000',
       stroke: '#000000',
       strokeThickness: 4,
-    }).setOrigin(0.5).setScrollFactor(0)
+    }).setOrigin(0.5).setScrollFactor(0).setVisible(false)
     
-    // Collider with platforms
+    this.boss.setData('revealed', false)
+    
+    // Collider with platforms (only vertical, boss can walk through)
     this.physics.add.collider(this.boss, this.platforms)
   }
 
@@ -1311,18 +1444,40 @@ export class GameScene extends Phaser.Scene {
     if (!this.isBossLevel || this.bossState === 'dead') return
     
     const now = this.time.now
+    
+    // Check if boss is on screen for the first time - reveal health bar
+    if (!this.boss.getData('revealed')) {
+      const camLeft = this.cameras.main.scrollX
+      const camRight = camLeft + BASE_WIDTH
+      if (this.boss.x > camLeft && this.boss.x < camRight) {
+        this.boss.setData('revealed', true)
+        this.bossHealthText.setVisible(true)
+      }
+    }
+    
     const faceParts = this.boss.getData('faceParts') as Phaser.GameObjects.Shape[]
     
     // Update face parts position to follow boss
     if (faceParts) {
       const bossX = this.boss.x
       const bossY = this.boss.y
-      faceParts[0].setPosition(bossX, bossY - 30) // face
-      faceParts[1].setPosition(bossX - 20, bossY - 40) // left eye
-      faceParts[2].setPosition(bossX + 20, bossY - 40) // right eye
-      faceParts[3].setPosition(bossX - 20, bossY - 40) // left pupil
-      faceParts[4].setPosition(bossX + 20, bossY - 40) // right pupil
-      faceParts[5].setPosition(bossX, bossY - 20) // nose
+      faceParts[0].setPosition(bossX, bossY - 60) // face
+      faceParts[1].setPosition(bossX - 20, bossY - 70) // left eye
+      faceParts[2].setPosition(bossX + 20, bossY - 70) // right eye
+      faceParts[3].setPosition(bossX - 20, bossY - 70) // left pupil
+      faceParts[4].setPosition(bossX + 20, bossY - 70) // right pupil
+      faceParts[5].setPosition(bossX, bossY - 50) // nose
+      if (faceParts[6]) faceParts[6].setPosition(bossX - 20, bossY - 82) // left brow
+      if (faceParts[7]) faceParts[7].setPosition(bossX + 20, bossY - 82) // right brow
+    }
+    
+    // Update hands position to follow boss
+    const hands = this.boss.getData('hands') as Phaser.GameObjects.Rectangle[]
+    if (hands && this.bossState !== 'attacking') {
+      const bossX = this.boss.x
+      const bossY = this.boss.y
+      hands[0].setPosition(bossX - 80, bossY + 20) // left hand
+      hands[1].setPosition(bossX + 80, bossY + 20) // right hand
     }
     
     // Boss AI
@@ -1336,15 +1491,26 @@ export class GameScene extends Phaser.Scene {
     }
     
     // Move towards player
+    const bossOnGround = this.bossBody.blocked.down
+    
     if (this.bossState === 'idle') {
       const distToPlayer = this.player.x - this.boss.x
       if (Math.abs(distToPlayer) > 150) {
-        this.bossBody.setVelocityX(distToPlayer > 0 ? 80 : -80)
+        this.bossBody.setVelocityX(distToPlayer > 0 ? 100 : -100)
+        
+        // Randomly jump while chasing (20% chance per frame when on ground)
+        if (bossOnGround && Phaser.Math.Between(0, 100) < 2) {
+          this.bossBody.setVelocityY(-400)
+        }
       } else {
         this.bossBody.setVelocityX(0)
         
         // Attack if close enough and cooldown passed
-        if (now >= this.bossAttackCooldown) {
+        if (now >= this.bossAttackCooldown && bossOnGround) {
+          // Sometimes jump attack
+          if (Phaser.Math.Between(0, 2) === 0) {
+            this.bossBody.setVelocityY(-500)
+          }
           this.bossAttack()
         }
       }
@@ -1368,33 +1534,72 @@ export class GameScene extends Phaser.Scene {
   bossAttack() {
     this.bossState = 'attacking'
     this.bossStateUntil = this.time.now + 800
-    this.bossAttackCooldown = this.time.now + 2000
+    this.bossAttackCooldown = this.time.now + 1500
     
-    // Random attack: smack (horizontal) or kick (diagonal down)
-    const attackType = Phaser.Math.Between(0, 1) === 0 ? 'smack' : 'kick'
-    
-    // Flash boss red during attack
+    // Flash boss orange during attack windup
     this.boss.setFillStyle(0xff6600)
     
-    // Create attack projectile
-    const attackX = this.boss.x + (this.player.x < this.boss.x ? -80 : 80)
-    const attackY = attackType === 'smack' ? this.boss.y - 20 : this.boss.y + 40
+    const smackDirection = this.player.x < this.boss.x ? -1 : 1
+    const hands = this.boss.getData('hands') as Phaser.GameObjects.Rectangle[]
+    const attackingHand = smackDirection === -1 ? hands[0] : hands[1]
+    const bossX = this.boss.x
+    const bossY = this.boss.y
     
-    const projectile = this.add.rectangle(attackX, attackY, 40, 30, 0xff4444)
-    projectile.setData('state', ProjectileState.Flying)
-    this.enemyProjectiles.add(projectile)
-    const body = projectile.body as Phaser.Physics.Arcade.Body
-    body.setAllowGravity(false)
+    // Phase 1: Shake hands (telegraph)
+    this.tweens.add({
+      targets: hands,
+      x: '+=5',
+      duration: 50,
+      yoyo: true,
+      repeat: 3,
+    })
     
-    const dirX = this.player.x - this.boss.x
-    const dirY = attackType === 'kick' ? 100 : 0
-    const speed = 250
-    const length = Math.sqrt(dirX * dirX + dirY * dirY) || 1
-    body.setVelocity((dirX / length) * speed, (dirY / length) * speed + (attackType === 'kick' ? 100 : 0))
-    
-    // Destroy projectile after 1 second
-    this.time.delayedCall(1000, () => {
-      if (projectile.active) projectile.destroy()
+    // Phase 2: Swat forward after shake
+    this.time.delayedCall(300, () => {
+      if (this.bossState !== 'attacking') return
+      
+      // Swat the attacking hand forward
+      const targetX = bossX + (smackDirection * 140)
+      const targetY = bossY + 40
+      
+      this.tweens.add({
+        targets: attackingHand,
+        x: targetX,
+        y: targetY,
+        duration: 100,
+        onComplete: () => {
+          // Create smack hitbox at hand position
+          const smackHitbox = this.add.rectangle(targetX, targetY, 80, 70, 0xff0000, 0.5)
+          
+          // Check if player is hit
+          if (this.playerState === PlayerState.Alive) {
+            const playerBounds = this.player.getBounds()
+            const smackBounds = smackHitbox.getBounds()
+            
+            if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, smackBounds)) {
+              this.playerState = PlayerState.Invulnerable
+              this.playerStateUntil = this.time.now + this.HIT_IFRAMES_MS
+              this.takeDamage()
+              // Knockback away from boss
+              this.playerBody.setVelocityX(smackDirection * 400)
+              this.playerBody.setVelocityY(-300)
+            }
+          }
+          
+          // Remove hitbox after brief display
+          this.time.delayedCall(150, () => {
+            smackHitbox.destroy()
+          })
+          
+          // Return hand to normal position
+          this.time.delayedCall(200, () => {
+            attackingHand.setPosition(
+              bossX + (smackDirection === -1 ? -80 : 80),
+              bossY + 20
+            )
+          })
+        }
+      })
     })
   }
 
