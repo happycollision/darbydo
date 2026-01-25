@@ -4,6 +4,14 @@ A simple Megaman-style platformer for a 4-year-old, built with Phaser 3 + TypeSc
 
 **Play it:** https://happycollision.github.io/darbydo/
 
+## Goal
+
+Spell **DARBY** by shooting the letter targets in order! D is always in the first part of the level, but the other letters are scattered randomly.
+
+- ✅ Hit the correct letter → it fills in at the top
+- ❌ Hit the wrong letter → the target shoots back at you!
+- 💔 Lose all 3 hearts → Game Over
+
 ## Controls
 
 **Keyboard:**
@@ -17,9 +25,9 @@ A simple Megaman-style platformer for a 4-year-old, built with Phaser 3 + TypeSc
 - ↺ (top left): reset game
 - 🎯 (top right): relocate remaining targets
 
-## Goal
+## Power-Up
 
-Destroy all 5 pink targets to win!
+Collect the **cyan pulsing orb** to activate **Spray Mode** for 15 seconds — shoots 5 projectiles in a spread!
 
 ## Development
 
@@ -43,22 +51,22 @@ The game auto-reloads on iPads when a new version is deployed (polls version.jso
 |------|---------|
 | `src/main.ts` | Phaser config, scale/physics settings, version polling |
 | `src/scenes/BootScene.ts` | "Tap to Start" screen (required for iOS audio) |
-| `src/scenes/GameScene.ts` | All gameplay: player, platforms, targets, controls, win condition |
+| `src/scenes/GameScene.ts` | All gameplay: player, platforms, DARBY targets, health, controls |
 
 ### Main Tunables (in GameScene.ts)
 
 - `WORLD_WIDTH` — side-scrolling world size (default: 2400)
-- `TARGET_COUNT` — targets to destroy to win (default: 5)
+- `DARBY_LETTERS` — the letters to spell
 - `MAX_PROJECTILES` — max bullets on screen (default: 3)
 - Jump velocity: `-550`
 - Move speed: `200`
 - Projectile speed: `400`
+- Health: 3 hearts
 
 ## Future Ideas
 
 - [ ] Add sprite for the player (photos of Darby!)
 - [ ] Add enemies that move
 - [ ] Add sound effects
-- [ ] Add health/lives
 - [ ] Multiple levels
 - [ ] Collectible items
