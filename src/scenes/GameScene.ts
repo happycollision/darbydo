@@ -36,7 +36,15 @@ export class GameScene extends Phaser.Scene {
   private facingIndicator!: Phaser.GameObjects.Triangle
   
   // Targets with letters
-  private targets: { circle: Phaser.GameObjects.Arc; letter: string; label: Phaser.GameObjects.Text }[] = []
+  private targets: { 
+    circle: Phaser.GameObjects.Arc
+    letter: string
+    label: Phaser.GameObjects.Text
+    originX: number
+    originY: number
+    moveAngle: number
+    lastShotTime: number
+  }[] = []
   private nextLetterIndex = 0
   private letterDisplays: Phaser.GameObjects.Text[] = []
   private winText!: Phaser.GameObjects.Text
@@ -252,7 +260,15 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 4,
       }).setOrigin(0.5)
       
-      this.targets.push({ circle, letter: this.letters[i], label })
+      this.targets.push({ 
+        circle, 
+        letter: this.letters[i], 
+        label,
+        originX: x,
+        originY: y,
+        moveAngle: Phaser.Math.Between(0, 360),
+        lastShotTime: 0
+      })
     }
   }
 
@@ -390,9 +406,50 @@ export class GameScene extends Phaser.Scene {
       this.collectPowerUp()
     }
 
+    // Update target movement and behavior
+    this.updateTargets()
+
     // Check collisions
     this.checkProjectileCollisions()
     this.checkEnemyProjectileCollisions()
+  }
+
+  updateTargets() {
+    const now = this.time.now
+    
+    for (const target of this.targets) {
+      if (!target.circle.active) continue
+      
+      if (this.difficulty === 'easy') {
+        // Darby mode: slow movement in small area (radius 50)
+        target.moveAngle += 0.5
+        const radius = 50
+        const newX = target.originX + Math.cos(Phaser.Math.DegToRad(target.moveAngle)) * radius
+        const newY = target.originY + Math.sin(Phaser.Math.DegToRad(target.moveAngle * 0.7)) * (radius * 0.5)
+        target.circle.setPosition(newX, newY)
+        target.label.setPosition(newX, newY)
+        
+      } else if (this.difficulty === 'hard') {
+        // Marvin mode: larger movement area (radius 100) and random shooting
+        target.moveAngle += 0.8
+        const radius = 100
+        const newX = target.originX + Math.cos(Phaser.Math.DegToRad(target.moveAngle)) * radius
+        const newY = target.originY + Math.sin(Phaser.Math.DegToRad(target.moveAngle * 0.6)) * (radius * 0.6)
+        
+        // Clamp to world bounds
+        const clampedX = Phaser.Math.Clamp(newX, 50, WORLD_WIDTH - 50)
+        const clampedY = Phaser.Math.Clamp(newY, 100, this.scale.height - 100)
+        target.circle.setPosition(clampedX, clampedY)
+        target.label.setPosition(clampedX, clampedY)
+        
+        // Random shooting: max once every 8 seconds
+        if (now - target.lastShotTime > 8000 && Phaser.Math.Between(0, 100) < 2) {
+          this.targetShootsAtPlayer(target.circle.x, target.circle.y)
+          target.lastShotTime = now
+        }
+      }
+      // Trilby mode: no movement
+    }
   }
 
   checkProjectileCollisions() {
