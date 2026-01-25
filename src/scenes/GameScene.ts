@@ -43,12 +43,16 @@ export class GameScene extends Phaser.Scene {
   private resetBtn!: Phaser.GameObjects.Arc
   private exitBtn!: Phaser.GameObjects.Arc
   private newTargetBtn!: Phaser.GameObjects.Arc
-  private touchState = { left: false, right: false, jump: false, shoot: false, newTarget: false, reset: false, exit: false }
+  private pauseBtn!: Phaser.GameObjects.Arc
+  private pauseLabel!: Phaser.GameObjects.Text
+  private touchState = { left: false, right: false, jump: false, shoot: false, newTarget: false, reset: false, exit: false, pause: false }
   private jumpWasPressed = false
   private shootWasPressed = false
   private newTargetWasPressed = false
   private resetWasPressed = false
   private exitWasPressed = false
+  private pauseWasPressed = false
+  private isPaused = false
   
   // Projectiles (player's and enemy's)
   private projectiles!: Phaser.Physics.Arcade.Group
@@ -603,20 +607,25 @@ export class GameScene extends Phaser.Scene {
       const zoneStart = WORLD_WIDTH / 3
       const zoneWidth = (WORLD_WIDTH - 100 - zoneStart) / remainingLetters
       
-      for (let i = 1; i < this.letters.length; i++) {
-        const zoneLeft = zoneStart + (i - 1) * zoneWidth
+      // Create zone positions for remaining letters
+      const zonePositions: { x: number; y: number }[] = []
+      for (let i = 0; i < remainingLetters; i++) {
+        const zoneLeft = zoneStart + i * zoneWidth
         const zoneRight = zoneLeft + zoneWidth
-        positions.push({
+        zonePositions.push({
           x: Phaser.Math.Between(zoneLeft + 50, zoneRight - 50),
           y: Phaser.Math.Between(150, BASE_HEIGHT - 150)
         })
       }
       
-      // Shuffle non-first positions
-      for (let i = positions.length - 1; i > 1; i--) {
-        const j = Phaser.Math.Between(1, i)
-        ;[positions[i], positions[j]] = [positions[j], positions[i]]
+      // Shuffle zone positions using Fisher-Yates
+      for (let i = zonePositions.length - 1; i > 0; i--) {
+        const j = Phaser.Math.Between(0, i)
+        ;[zonePositions[i], zonePositions[j]] = [zonePositions[j], zonePositions[i]]
       }
+      
+      // Add shuffled positions to main array
+      positions.push(...zonePositions)
     }
     
     for (let i = 0; i < this.letters.length; i++) {
@@ -663,29 +672,15 @@ export class GameScene extends Phaser.Scene {
   createHeartPowerUps() {
     this.heartPowerUps = []
     
-    // More hearts on higher levels
-    const powerUpConfigs: { value: number; label: string }[] = []
-    
-    // Level 1: 1 heart (+1)
-    // Level 2: 2 hearts (+1 and +2)
-    // Level 3+: 4 hearts (+1, +1, +2, +3)
-    if (this.level >= 3) {
-      powerUpConfigs.push(
-        { value: 1, label: '❤️+1' },
-        { value: 1, label: '❤️+1' },
-        { value: 2, label: '❤️+2' },
-        { value: 3, label: '❤️+3' },
-      )
-    } else if (this.level === 2) {
-      powerUpConfigs.push(
-        { value: 1, label: '❤️+1' },
-        { value: 2, label: '❤️+2' },
-      )
-    } else {
-      powerUpConfigs.push(
-        { value: 1, label: '❤️+1' },
-      )
-    }
+    // Always allow gaining 7 additional hearts per level
+    // Spread across multiple pickups of varying values
+    const powerUpConfigs: { value: number; label: string }[] = [
+      { value: 1, label: '❤️+1' },
+      { value: 1, label: '❤️+1' },
+      { value: 1, label: '❤️+1' },
+      { value: 2, label: '❤️+2' },
+      { value: 2, label: '❤️+2' },
+    ] // Total: 7 hearts
     
     for (const config of powerUpConfigs) {
       const x = Phaser.Math.Between(WORLD_WIDTH * 0.2, WORLD_WIDTH * 0.8)
@@ -740,6 +735,10 @@ export class GameScene extends Phaser.Scene {
     // Relocate targets button (top right)
     this.newTargetBtn = this.add.circle(760, 40, 30, 0xff00ff, 0.5).setScrollFactor(0)
     this.add.text(760, 40, '🎯', { fontSize: '24px' }).setOrigin(0.5).setScrollFactor(0)
+
+    // Pause button (next to relocate)
+    this.pauseBtn = this.add.circle(690, 40, 30, 0xffaa00, 0.5).setScrollFactor(0)
+    this.pauseLabel = this.add.text(690, 40, '⏸️', { fontSize: '24px' }).setOrigin(0.5).setScrollFactor(0)
   }
 
   updateTouchState() {
@@ -750,6 +749,7 @@ export class GameScene extends Phaser.Scene {
     this.touchState.newTarget = false
     this.touchState.reset = false
     this.touchState.exit = false
+    this.touchState.pause = false
 
     const pointers = [this.input.activePointer, this.input.pointer1, this.input.pointer2]
     
@@ -766,6 +766,7 @@ export class GameScene extends Phaser.Scene {
       if (this.newTargetBtn.getBounds().contains(x, y)) this.touchState.newTarget = true
       if (this.resetBtn.getBounds().contains(x, y)) this.touchState.reset = true
       if (this.exitBtn.getBounds().contains(x, y)) this.touchState.exit = true
+      if (this.pauseBtn.getBounds().contains(x, y)) this.touchState.pause = true
     }
   }
 
@@ -785,6 +786,21 @@ export class GameScene extends Phaser.Scene {
       this.scene.restart()
     }
     this.resetWasPressed = resetPressed
+
+    // Pause button toggles pause state
+    const pausePressed = this.touchState.pause
+    if (pausePressed && !this.pauseWasPressed) {
+      this.isPaused = !this.isPaused
+      this.pauseLabel.setText(this.isPaused ? '▶️' : '⏸️')
+      this.physics.world.isPaused = this.isPaused
+    }
+    this.pauseWasPressed = pausePressed
+
+    // When paused, only update FPS and skip gameplay
+    if (this.isPaused) {
+      this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`)
+      return
+    }
 
     // Update player state machine
     this.updatePlayerState()
@@ -849,10 +865,8 @@ export class GameScene extends Phaser.Scene {
       this.collectPowerUp()
     }
 
-    // Check heart power-up collection
-    if (!isLevelComplete) {
-      this.checkHeartPowerUpCollection()
-    }
+    // Check heart power-up collection (always allowed, even during level complete)
+    this.checkHeartPowerUpCollection()
 
     // Update target movement and behavior (disabled during level complete)
     if (!isLevelComplete && !this.isBossLevel) {
@@ -1202,6 +1216,10 @@ export class GameScene extends Phaser.Scene {
     if (this.health <= 0) {
       this.playerState = PlayerState.Dead
       this.loseText.setVisible(true)
+      // Auto-restart after a brief delay
+      this.time.delayedCall(1500, () => {
+        this.scene.restart()
+      })
     }
   }
 
@@ -1345,6 +1363,7 @@ export class GameScene extends Phaser.Scene {
     const groundHeight = 120
     const groundExtension = this.add.rectangle(WORLD_WIDTH + 150, BASE_HEIGHT - groundHeight / 2, 300, groundHeight, 0x4a4a4a)
     this.platforms.add(groundExtension)
+    ;(this.platforms as Phaser.Physics.Arcade.StaticGroup).refresh()
     
     // Pulse the door glow
     this.tweens.add({
