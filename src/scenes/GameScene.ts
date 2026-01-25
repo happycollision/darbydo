@@ -9,6 +9,7 @@ enum PlayerState {
   Alive = 'alive',
   Invulnerable = 'invulnerable',
   Dead = 'dead',
+  LevelComplete = 'levelComplete',
 }
 
 enum ProjectileState {
@@ -101,16 +102,23 @@ export class GameScene extends Phaser.Scene {
   private nextBirdTime = 0
   private farMountains!: Phaser.GameObjects.Graphics
   private nearMountains!: Phaser.GameObjects.Graphics
+  
+  // Level system
+  private level = 1
+  private exitDoor!: Phaser.GameObjects.Rectangle
+  private exitDoorGlow!: Phaser.GameObjects.Rectangle
+  private exitArrow!: Phaser.GameObjects.Text
 
   constructor() {
     super({ key: 'GameScene' })
   }
 
-  create(data: { letters?: string[]; name?: string; difficulty?: 'easy' | 'noJump' | 'hard' }) {
+  create(data: { letters?: string[]; name?: string; difficulty?: 'easy' | 'noJump' | 'hard'; level?: number }) {
     // Get mode from scene data
     if (data.letters) this.letters = data.letters
     if (data.name) this.characterName = data.name
     if (data.difficulty) this.difficulty = data.difficulty
+    this.level = data.level ?? 1
 
     // Reset state
     this.nextLetterIndex = 0
@@ -200,6 +208,20 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 1, 1)
     this.cameras.main.roundPixels = true
 
+    // Exit arrow (hidden initially, shows when level complete)
+    this.exitArrow = this.add.text(BASE_WIDTH - 60, BASE_HEIGHT / 2, '➡️', {
+      fontSize: '64px',
+    }).setOrigin(0.5).setScrollFactor(0).setVisible(false)
+    
+    // Exit door (hidden initially, appears past end of level)
+    const doorX = WORLD_WIDTH + 100
+    const doorGroundHeight = 120
+    this.exitDoorGlow = this.add.rectangle(doorX, BASE_HEIGHT - doorGroundHeight - 60, 70, 120, 0x00ffff, 0.3)
+    this.exitDoorGlow.setVisible(false)
+    this.exitDoor = this.add.rectangle(doorX, BASE_HEIGHT - doorGroundHeight - 60, 60, 100, 0x8B4513)
+    this.exitDoor.setStrokeStyle(4, 0xffff00)
+    this.exitDoor.setVisible(false)
+    
     // Win text (hidden initially)
     this.winText = this.add.text(BASE_WIDTH / 2, BASE_HEIGHT / 2, '🎉 YOU WIN! 🎉', {
       fontSize: '64px',
@@ -245,6 +267,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   createBackground() {
+    if (this.level % 2 === 0) {
+      this.createForestBackground()
+    } else {
+      this.createMountainBackground()
+    }
+    
+    // Reset birds
+    this.birds = []
+    this.nextBirdTime = this.time.now + Phaser.Math.Between(2000, 5000)
+  }
+
+  createMountainBackground() {
     // Sky gradient (static, doesn't scroll)
     const sky = this.add.graphics()
     for (let y = 0; y < BASE_HEIGHT; y += 10) {
@@ -303,10 +337,78 @@ export class GameScene extends Phaser.Scene {
     }
     this.nearMountains.setScrollFactor(0.5)
     this.nearMountains.setDepth(-10)
+  }
+
+  createForestBackground() {
+    // Forest sky gradient (warmer tones)
+    const sky = this.add.graphics()
+    for (let y = 0; y < BASE_HEIGHT; y += 10) {
+      const t = y / BASE_HEIGHT
+      const r = Math.floor(180 + t * 30)
+      const g = Math.floor(200 + t * 20)
+      const b = Math.floor(180 - t * 40)
+      sky.fillStyle(Phaser.Display.Color.GetColor(r, g, b))
+      sky.fillRect(0, y, BASE_WIDTH, 10)
+    }
+    sky.setScrollFactor(0)
+    sky.setDepth(-12)
     
-    // Reset birds
-    this.birds = []
-    this.nextBirdTime = this.time.now + Phaser.Math.Between(2000, 5000)
+    // Far trees (darker, smaller) - slow parallax (0.2)
+    this.farMountains = this.add.graphics()
+    const farTreeColor = 0x2d5a27
+    for (let x = 0; x < WORLD_WIDTH * 1.5; x += 80) {
+      const treeHeight = Phaser.Math.Between(100, 180)
+      const treeWidth = Phaser.Math.Between(40, 60)
+      
+      // Tree trunk
+      this.farMountains.fillStyle(0x4a3728)
+      this.farMountains.fillRect(x + treeWidth / 2 - 5, BASE_HEIGHT - 120 - 30, 10, 30)
+      
+      // Tree foliage (triangle)
+      this.farMountains.fillStyle(farTreeColor)
+      this.farMountains.fillTriangle(
+        x, BASE_HEIGHT - 120 - 30,
+        x + treeWidth / 2, BASE_HEIGHT - 120 - treeHeight,
+        x + treeWidth, BASE_HEIGHT - 120 - 30
+      )
+    }
+    this.farMountains.setScrollFactor(0.2)
+    this.farMountains.setDepth(-11)
+    
+    // Near trees (lighter, larger) - medium parallax (0.5)
+    this.nearMountains = this.add.graphics()
+    const nearTreeColor = 0x3d7a37
+    for (let x = -50; x < WORLD_WIDTH * 1.2; x += 120) {
+      const treeHeight = Phaser.Math.Between(150, 280)
+      const treeWidth = Phaser.Math.Between(60, 100)
+      
+      // Tree trunk
+      this.nearMountains.fillStyle(0x5d4a3a)
+      this.nearMountains.fillRect(x + treeWidth / 2 - 8, BASE_HEIGHT - 120 - 40, 16, 40)
+      
+      // Tree foliage (layered triangles for pine tree look)
+      this.nearMountains.fillStyle(nearTreeColor)
+      // Bottom layer
+      this.nearMountains.fillTriangle(
+        x - 10, BASE_HEIGHT - 120 - 40,
+        x + treeWidth / 2, BASE_HEIGHT - 120 - treeHeight * 0.5,
+        x + treeWidth + 10, BASE_HEIGHT - 120 - 40
+      )
+      // Middle layer
+      this.nearMountains.fillTriangle(
+        x, BASE_HEIGHT - 120 - treeHeight * 0.4,
+        x + treeWidth / 2, BASE_HEIGHT - 120 - treeHeight * 0.8,
+        x + treeWidth, BASE_HEIGHT - 120 - treeHeight * 0.4
+      )
+      // Top layer
+      this.nearMountains.fillTriangle(
+        x + 10, BASE_HEIGHT - 120 - treeHeight * 0.65,
+        x + treeWidth / 2, BASE_HEIGHT - 120 - treeHeight,
+        x + treeWidth - 10, BASE_HEIGHT - 120 - treeHeight * 0.65
+      )
+    }
+    this.nearMountains.setScrollFactor(0.5)
+    this.nearMountains.setDepth(-10)
   }
 
   createLetterDisplays() {
@@ -563,6 +665,7 @@ export class GameScene extends Phaser.Scene {
     }
     
     const onGround = this.playerBody.blocked.down
+    const isLevelComplete = this.playerState === PlayerState.LevelComplete
 
     // Horizontal movement
     const leftPressed = this.cursors?.left.isDown || this.touchState.left
@@ -585,22 +688,22 @@ export class GameScene extends Phaser.Scene {
     }
     this.jumpWasPressed = jumpPressed
 
-    // Shoot
+    // Shoot (disabled during level complete)
     const shootPressed = this.cursors?.space.isDown || this.touchState.shoot
-    if (shootPressed && !this.shootWasPressed && this.projectiles.countActive() < this.MAX_PROJECTILES) {
+    if (!isLevelComplete && shootPressed && !this.shootWasPressed && this.projectiles.countActive() < this.MAX_PROJECTILES) {
       this.shoot()
     }
     this.shootWasPressed = shootPressed
 
-    // Relocate targets
+    // Relocate targets (disabled during level complete)
     const newTargetPressed = this.touchState.newTarget
-    if (newTargetPressed && !this.newTargetWasPressed) {
+    if (!isLevelComplete && newTargetPressed && !this.newTargetWasPressed) {
       this.relocateTargets()
     }
     this.newTargetWasPressed = newTargetPressed
 
-    // Check power-up collection
-    if (this.powerUp.active && Phaser.Geom.Intersects.RectangleToRectangle(
+    // Check power-up collection (disabled during level complete)
+    if (!isLevelComplete && this.powerUp.active && Phaser.Geom.Intersects.RectangleToRectangle(
       this.player.getBounds(),
       this.powerUp.getBounds()
     )) {
@@ -608,10 +711,17 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Check heart power-up collection
-    this.checkHeartPowerUpCollection()
+    if (!isLevelComplete) {
+      this.checkHeartPowerUpCollection()
+    }
 
-    // Update target movement and behavior
-    this.updateTargets()
+    // Update target movement and behavior (disabled during level complete)
+    if (!isLevelComplete) {
+      this.updateTargets()
+    }
+
+    // Check door entry during level complete
+    this.checkDoorEntry()
 
     // Clean up off-screen projectiles
     this.cleanupOffscreenProjectiles()
@@ -809,8 +919,7 @@ export class GameScene extends Phaser.Scene {
       this.nextLetterIndex++
       
       if (this.nextLetterIndex >= this.letters.length) {
-        this.winText.setVisible(true)
-        this.playerState = PlayerState.Dead // Use state machine for win too
+        this.onLevelComplete()
       }
     } else {
       // Wrong letter - reaction depends on difficulty
@@ -1056,6 +1165,59 @@ export class GameScene extends Phaser.Scene {
         const body = circle.body as Phaser.Physics.Arcade.StaticBody
         body.updateFromGameObject()
       }
+    }
+  }
+
+  onLevelComplete() {
+    this.playerState = PlayerState.LevelComplete
+    
+    // Show exit arrow and door
+    this.exitArrow.setVisible(true)
+    this.exitDoor.setVisible(true)
+    this.exitDoorGlow.setVisible(true)
+    
+    // Extend world and camera bounds to include door
+    this.physics.world.setBounds(0, 0, WORLD_WIDTH + 300, BASE_HEIGHT)
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH + 300, BASE_HEIGHT)
+    
+    // Extend ground to reach the door
+    const groundHeight = 120
+    const groundExtension = this.add.rectangle(WORLD_WIDTH + 150, BASE_HEIGHT - groundHeight / 2, 300, groundHeight, 0x4a4a4a)
+    this.platforms.add(groundExtension)
+    
+    // Pulse the door glow
+    this.tweens.add({
+      targets: this.exitDoorGlow,
+      alpha: { from: 0.3, to: 0.8 },
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+    })
+    
+    // Pulse the arrow
+    this.tweens.add({
+      targets: this.exitArrow,
+      x: BASE_WIDTH - 40,
+      duration: 300,
+      yoyo: true,
+      repeat: -1,
+    })
+  }
+
+  checkDoorEntry() {
+    if (this.playerState !== PlayerState.LevelComplete) return
+    
+    const playerBounds = this.player.getBounds()
+    const doorBounds = this.exitDoor.getBounds()
+    
+    if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, doorBounds)) {
+      // Transition to next level
+      this.scene.restart({
+        letters: this.letters,
+        name: this.characterName,
+        difficulty: this.difficulty,
+        level: this.level + 1,
+      })
     }
   }
 }
