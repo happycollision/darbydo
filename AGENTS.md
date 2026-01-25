@@ -24,6 +24,16 @@ bun run build    # Production build
 ./deploy.sh      # Build and deploy to GitHub Pages
 ```
 
+## Game Modes
+
+Three character modes with different difficulties:
+
+| Mode | Letters | Platforms | Target Movement | Wrong Letter Response |
+|------|---------|-----------|-----------------|----------------------|
+| 👦 Darby (easy) | D-A-R-B-Y | 2 low | Slow orbit (50px) | Horizontal shot |
+| 👧 Trilby (no jump) | T-R-I-L-B-Y | None | Stationary | Shake only |
+| 👨 Marvin (hard) | M-A-R-V-I-N | Full set | Large orbit (100px) + random shots | Aimed shot at player |
+
 ## Important Behaviors (Do Not Break)
 
 1. **Touch controls are primary** — multi-touch must work (move + jump simultaneously)
@@ -46,25 +56,30 @@ bun run build    # Production build
 - Version polling for auto-reload on deploy
 
 ### src/scenes/BootScene.ts
-- "Tap to Start" screen (required for iOS audio autoplay restrictions)
+- Character selection screen: Darby, Trilby, Marvin
+- Passes letters and difficulty to GameScene
 
-### src/scenes/GameScene.ts (~500 lines)
+### src/scenes/GameScene.ts (~700 lines)
 Main gameplay file, organized as:
 
 | Section | Purpose |
 |---------|---------|
-| Constants | `WORLD_WIDTH`, `DARBY_LETTERS` |
+| Constants | `WORLD_WIDTH` |
 | Class properties | Player, platforms, projectiles, targets, health, UI elements, input state |
 | `create()` | Sets up world, platforms, player, targets, camera, UI, health display |
 | `createLetterDisplays()` | Creates `_ _ _ _ _` display at top |
-| `createTargets()` | Spawns 5 lettered targets (D in first third, others randomized) |
+| `createTargets()` | Spawns lettered targets (first letter in first third, others randomized) |
 | `createPowerUp()` | Spawns spray power-up with pulsing effect |
 | `createTouchControls()` | Creates touch buttons with scrollFactor(0) |
 | `updateTouchState()` | Reads all pointers, sets boolean input flags |
 | `update()` | Main loop: movement, jump, shoot, collisions |
+| `updateTargets()` | Target movement + random shooting (Marvin mode) |
 | `checkProjectileCollisions()` | Hit detection + correct/wrong letter logic + win condition |
 | `checkEnemyProjectileCollisions()` | Enemy projectile → player damage |
-| `targetShootsBack()` | Fires red projectile at player |
+| `onWrongLetter()` | Difficulty-specific response (shake/horizontal/aimed) |
+| `shakeTarget()` | Shake animation for Trilby mode |
+| `targetShootsHorizontal()` | Horizontal shot for Darby mode |
+| `targetShootsAtPlayer()` | Aimed shot with configurable speed |
 | `takeDamage()` | Reduces health, flashes player, checks lose condition |
 | `shoot()` / `shootSingle()` / `shootSpray()` | Player projectile spawning |
 | `collectPowerUp()` | Activates spray mode for 15 seconds |
@@ -83,6 +98,7 @@ Main gameplay file, organized as:
 After changes, verify:
 - [ ] Touch: Can hold move + tap jump/shoot simultaneously
 - [ ] Reset button works
+- [ ] Exit button returns to character select
 - [ ] D target is in first third of world
 - [ ] Other letters (A, R, B, Y) are randomized, not in order
 - [ ] Hitting correct letter fills in display and destroys target
@@ -93,4 +109,7 @@ After changes, verify:
 - [ ] Spray power-up works for 15 seconds
 - [ ] Projectiles clean up off-screen
 - [ ] Camera follows player through side-scrolling world
+- [ ] Marvin mode: targets move and randomly shoot (orange warning first)
+- [ ] Darby mode: targets move slowly
+- [ ] Trilby mode: targets stationary, no shooting back
 - [ ] `bun run build` succeeds with no TypeScript errors

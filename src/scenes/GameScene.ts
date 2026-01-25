@@ -469,10 +469,10 @@ export class GameScene extends Phaser.Scene {
           target.preparingToFire = true
           target.circle.setFillStyle(0xff8800)
           
-          // Fire after 0.5 seconds
+          // Fire after 0.5 seconds (slower speed for random shots)
           this.time.delayedCall(500, () => {
             if (target.circle.active && target.preparingToFire) {
-              this.targetShootsAtPlayer(target.circle.x, target.circle.y)
+              this.targetShootsAtPlayer(target.circle.x, target.circle.y, 150)
               target.lastShotTime = this.time.now
               target.preparingToFire = false
               target.circle.setFillStyle(0xff00ff) // Back to pink
@@ -597,7 +597,7 @@ export class GameScene extends Phaser.Scene {
     body.setVelocity(dirX * 300, 0)
   }
 
-  targetShootsAtPlayer(fromX: number, fromY: number) {
+  targetShootsAtPlayer(fromX: number, fromY: number, speed = 300) {
     const projectile = this.add.rectangle(fromX, fromY, 15, 8, 0xff0000)
     this.enemyProjectiles.add(projectile)
     const body = projectile.body as Phaser.Physics.Arcade.Body
@@ -607,7 +607,7 @@ export class GameScene extends Phaser.Scene {
     const dirX = this.player.x - fromX
     const dirY = this.player.y - fromY
     const length = Math.sqrt(dirX * dirX + dirY * dirY)
-    body.setVelocity((dirX / length) * 300, (dirY / length) * 300)
+    body.setVelocity((dirX / length) * speed, (dirY / length) * speed)
   }
 
   takeDamage() {

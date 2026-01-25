@@ -4,12 +4,22 @@ A simple Megaman-style platformer for a 4-year-old, built with Phaser 3 + TypeSc
 
 **Play it:** https://happycollision.github.io/darbydo/
 
+## Game Modes
+
+Choose your character at the start screen:
+
+| Mode | Difficulty | Letters | Notes |
+|------|------------|---------|-------|
+| 👦 **Darby** | Easy | D-A-R-B-Y | Targets move slowly, shoot horizontal |
+| 👧 **Trilby** | No jumping | T-R-I-L-B-Y | Stationary targets, just shake when wrong |
+| 👨 **Marvin** | Hard | M-A-R-V-I-N | Targets move fast, shoot aimed + randomly |
+
 ## Goal
 
-Spell **DARBY** by shooting the letter targets in order! D is always in the first part of the level, but the other letters are scattered randomly.
+Spell the name by shooting letter targets **in order**! The first letter is always in the first third of the level.
 
 - ✅ Hit the correct letter → it fills in at the top
-- ❌ Hit the wrong letter → the target shoots back at you!
+- ❌ Hit the wrong letter → response varies by difficulty
 - 💔 Lose all 3 hearts → Game Over
 
 ## Controls
@@ -22,6 +32,7 @@ Spell **DARBY** by shooting the letter targets in order! D is always in the firs
 - Left/Right buttons: move
 - JUMP button: jump
 - SHOOT button: fire projectile
+- ✕ (top left): exit to character select
 - ↺ (top left): reset game
 - 🎯 (top right): relocate remaining targets
 
@@ -50,23 +61,20 @@ The game auto-reloads on iPads when a new version is deployed (polls version.jso
 | File | Purpose |
 |------|---------|
 | `src/main.ts` | Phaser config, scale/physics settings, version polling |
-| `src/scenes/BootScene.ts` | "Tap to Start" screen (required for iOS audio) |
-| `src/scenes/GameScene.ts` | All gameplay: player, platforms, DARBY targets, health, controls |
+| `src/scenes/BootScene.ts` | Character selection screen |
+| `src/scenes/GameScene.ts` | All gameplay: player, platforms, targets, health, controls |
 
 ### Main Tunables (in GameScene.ts)
 
 - `WORLD_WIDTH` — side-scrolling world size (default: 2400)
-- `DARBY_LETTERS` — the letters to spell
 - `MAX_PROJECTILES` — max bullets on screen (default: 3)
 - Jump velocity: `-550`
 - Move speed: `200`
-- Projectile speed: `400`
+- Projectile speed: `400` (retaliation), `150` (random shots)
 - Health: 3 hearts
 
 ## Future Ideas
 
-- [ ] Add sprite for the player (photos of Darby!)
-- [ ] Add enemies that move
+- [ ] Add sprite for the player (photos of the kids!)
 - [ ] Add sound effects
-- [ ] Multiple levels
 - [ ] Collectible items
