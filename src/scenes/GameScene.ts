@@ -93,6 +93,12 @@ export class GameScene extends Phaser.Scene {
   
   // FPS display
   private fpsText!: Phaser.GameObjects.Text
+  
+  // Background and birds
+  private birds: { body: Phaser.GameObjects.Ellipse; leftWing: Phaser.GameObjects.Triangle; rightWing: Phaser.GameObjects.Triangle; speed: number }[] = []
+  private nextBirdTime = 0
+  private farMountains!: Phaser.GameObjects.Graphics
+  private nearMountains!: Phaser.GameObjects.Graphics
 
   constructor() {
     super({ key: 'GameScene' })
@@ -115,11 +121,15 @@ export class GameScene extends Phaser.Scene {
     // Set world bounds for side-scrolling
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, height)
 
+    // Create snowy mountain background
+    this.createBackground()
+
     // Create platforms
     this.platforms = this.physics.add.staticGroup()
     
-    // Ground (full world width)
-    const ground = this.add.rectangle(WORLD_WIDTH / 2, height - 20, WORLD_WIDTH, 40, 0x4a4a4a)
+    // Ground (full world width) - tall enough to be above touch controls
+    const groundHeight = 120
+    const ground = this.add.rectangle(WORLD_WIDTH / 2, height - groundHeight / 2, WORLD_WIDTH, groundHeight, 0x4a4a4a)
     this.platforms.add(ground)
     
     // Add platforms based on difficulty
@@ -140,8 +150,8 @@ export class GameScene extends Phaser.Scene {
     }
     // noJump mode: no platforms, just ground
 
-    // Create player
-    this.player = this.add.rectangle(100, height - 100, 40, 60, 0x3498db)
+    // Create player (spawn above ground)
+    this.player = this.add.rectangle(100, height - groundHeight - 50, 40, 60, 0x3498db)
     this.physics.add.existing(this.player)
     this.playerBody = this.player.body as Phaser.Physics.Arcade.Body
     this.playerBody.setCollideWorldBounds(true)
@@ -234,6 +244,73 @@ export class GameScene extends Phaser.Scene {
     this.createTouchControls()
   }
 
+  createBackground() {
+    const { height } = this.scale
+    
+    // Sky gradient (static, doesn't scroll)
+    const sky = this.add.graphics()
+    for (let y = 0; y < height; y += 10) {
+      const t = y / height
+      const r = Math.floor(135 + t * 20)
+      const g = Math.floor(206 + t * 10)
+      const b = Math.floor(235 - t * 30)
+      sky.fillStyle(Phaser.Display.Color.GetColor(r, g, b))
+      sky.fillRect(0, y, this.scale.width, 10)
+    }
+    sky.setScrollFactor(0)
+    sky.setDepth(-12)
+    
+    // Far mountains (darker, smaller) - slow parallax (0.2)
+    this.farMountains = this.add.graphics()
+    const farMountainColor = 0x8899aa
+    this.farMountains.fillStyle(farMountainColor)
+    for (let x = 0; x < WORLD_WIDTH * 1.5; x += 300) {
+      const peakHeight = Phaser.Math.Between(150, 250)
+      const baseWidth = Phaser.Math.Between(250, 350)
+      this.farMountains.fillTriangle(
+        x, height - 120,
+        x + baseWidth / 2, height - 120 - peakHeight,
+        x + baseWidth, height - 120
+      )
+    }
+    this.farMountains.setScrollFactor(0.2)
+    this.farMountains.setDepth(-11)
+    
+    // Near mountains (lighter with snow caps) - medium parallax (0.5)
+    this.nearMountains = this.add.graphics()
+    const nearMountainColor = 0x667788
+    const snowColor = 0xffffff
+    for (let x = -100; x < WORLD_WIDTH * 1.2; x += 400) {
+      const peakHeight = Phaser.Math.Between(200, 350)
+      const baseWidth = Phaser.Math.Between(350, 500)
+      const peakX = x + baseWidth / 2
+      const peakY = height - 120 - peakHeight
+      
+      // Mountain body
+      this.nearMountains.fillStyle(nearMountainColor)
+      this.nearMountains.fillTriangle(
+        x, height - 120,
+        peakX, peakY,
+        x + baseWidth, height - 120
+      )
+      
+      // Snow cap
+      this.nearMountains.fillStyle(snowColor)
+      const snowHeight = peakHeight * 0.3
+      this.nearMountains.fillTriangle(
+        peakX - baseWidth * 0.15, peakY + snowHeight,
+        peakX, peakY,
+        peakX + baseWidth * 0.15, peakY + snowHeight
+      )
+    }
+    this.nearMountains.setScrollFactor(0.5)
+    this.nearMountains.setDepth(-10)
+    
+    // Reset birds
+    this.birds = []
+    this.nextBirdTime = this.time.now + Phaser.Math.Between(2000, 5000)
+  }
+
   createLetterDisplays() {
     this.letterDisplays = []
     const totalWidth = this.letters.length * 50
@@ -253,7 +330,8 @@ export class GameScene extends Phaser.Scene {
 
   createTargets() {
     const positions: { x: number; y: number }[] = []
-    const groundY = this.scale.height - 80 // Near ground level
+    const groundSurface = this.scale.height - 120 // Top of the ground platform
+    const groundY = groundSurface - 30 // Targets float just above ground
     
     if (this.difficulty === 'noJump') {
       // Trilby mode: all targets at ground level, spread evenly
@@ -261,7 +339,7 @@ export class GameScene extends Phaser.Scene {
       for (let i = 0; i < this.letters.length; i++) {
         positions.push({
           x: spacing * (i + 1),
-          y: groundY
+          y: groundSurface - 50 // At player height on ground
         })
       }
     } else if (this.difficulty === 'easy') {
@@ -535,8 +613,77 @@ export class GameScene extends Phaser.Scene {
     // Clean up off-screen projectiles
     this.cleanupOffscreenProjectiles()
 
+    // Update birds
+    this.updateBirds()
+
     // Update FPS display
     this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`)
+  }
+
+  updateBirds() {
+    const now = this.time.now
+    const camLeft = this.cameras.main.scrollX
+    const camRight = camLeft + this.scale.width
+    
+    // Spawn new bird if it's time
+    if (now >= this.nextBirdTime) {
+      this.spawnBird()
+      this.nextBirdTime = now + Phaser.Math.Between(3000, 8000)
+    }
+    
+    // Update existing birds and remove off-screen ones
+    for (let i = this.birds.length - 1; i >= 0; i--) {
+      const bird = this.birds[i]
+      
+      // Move bird
+      bird.body.x += bird.speed
+      bird.leftWing.x = bird.body.x - 8
+      bird.rightWing.x = bird.body.x + 8
+      bird.leftWing.y = bird.body.y
+      bird.rightWing.y = bird.body.y
+      
+      // Flap animation - wings rotate up and down
+      const flapAngle = Math.sin(now * 0.015 + i * 2) * 0.6
+      bird.leftWing.rotation = -flapAngle - 0.3
+      bird.rightWing.rotation = flapAngle + 0.3
+      
+      // Remove if off screen
+      if ((bird.speed > 0 && bird.body.x > camRight + 100) || (bird.speed < 0 && bird.body.x < camLeft - 100)) {
+        bird.body.destroy()
+        bird.leftWing.destroy()
+        bird.rightWing.destroy()
+        this.birds.splice(i, 1)
+      }
+    }
+  }
+
+  spawnBird() {
+    const camLeft = this.cameras.main.scrollX
+    const camRight = camLeft + this.scale.width
+    
+    // Randomly spawn from left or right
+    const fromLeft = Phaser.Math.Between(0, 1) === 0
+    const x = fromLeft ? camLeft - 50 : camRight + 50
+    const y = Phaser.Math.Between(50, this.scale.height / 3)
+    const speed = fromLeft ? Phaser.Math.Between(2, 4) : Phaser.Math.Between(-4, -2)
+    
+    // Create bird body (small ellipse)
+    const body = this.add.ellipse(x, y, 12, 6, 0x222222)
+    body.setDepth(-5)
+    
+    // Create wings (triangles that will flap)
+    const wingColor = 0x333333
+    const leftWing = this.add.triangle(x - 8, y, 0, 8, 12, 0, 12, 8, wingColor)
+    const rightWing = this.add.triangle(x + 8, y, 0, 0, 0, 8, 12, 8, wingColor)
+    leftWing.setDepth(-5)
+    rightWing.setDepth(-5)
+    
+    // Flip bird if going right to left
+    if (!fromLeft) {
+      body.setScale(-1, 1)
+    }
+    
+    this.birds.push({ body, leftWing, rightWing, speed })
   }
 
   updatePlayerState() {
