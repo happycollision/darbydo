@@ -19,12 +19,14 @@ export class GameScene extends Phaser.Scene {
   private jumpBtn!: Phaser.GameObjects.Arc
   private shootBtn!: Phaser.GameObjects.Arc
   private resetBtn!: Phaser.GameObjects.Arc
+  private exitBtn!: Phaser.GameObjects.Arc
   private newTargetBtn!: Phaser.GameObjects.Arc
-  private touchState = { left: false, right: false, jump: false, shoot: false, newTarget: false, reset: false }
+  private touchState = { left: false, right: false, jump: false, shoot: false, newTarget: false, reset: false, exit: false }
   private jumpWasPressed = false
   private shootWasPressed = false
   private newTargetWasPressed = false
   private resetWasPressed = false
+  private exitWasPressed = false
   
   // Projectiles (player's and enemy's)
   private projectiles!: Phaser.Physics.Arcade.Group
@@ -44,6 +46,7 @@ export class GameScene extends Phaser.Scene {
     originY: number
     moveAngle: number
     lastShotTime: number
+    preparingToFire: boolean
   }[] = []
   private nextLetterIndex = 0
   private letterDisplays: Phaser.GameObjects.Text[] = []
@@ -267,7 +270,8 @@ export class GameScene extends Phaser.Scene {
         originX: x,
         originY: y,
         moveAngle: Phaser.Math.Between(0, 360),
-        lastShotTime: -Phaser.Math.Between(0, 8000) // Randomize initial offset so shots don't sync
+        lastShotTime: -Phaser.Math.Between(0, 8000), // Randomize initial offset so shots don't sync
+        preparingToFire: false
       })
     }
   }
@@ -293,9 +297,13 @@ export class GameScene extends Phaser.Scene {
 
     this.input.addPointer(1)
 
-    // Reset button (top left)
-    this.resetBtn = this.add.circle(40, 40, 30, 0xffaa00, 0.5).setScrollFactor(0)
-    this.add.text(40, 40, '↺', { fontSize: '32px' }).setOrigin(0.5).setScrollFactor(0)
+    // Exit button (top left)
+    this.exitBtn = this.add.circle(40, 40, 30, 0x666666, 0.5).setScrollFactor(0)
+    this.add.text(40, 40, '✕', { fontSize: '28px' }).setOrigin(0.5).setScrollFactor(0)
+
+    // Reset button (next to exit)
+    this.resetBtn = this.add.circle(100, 40, 30, 0xffaa00, 0.5).setScrollFactor(0)
+    this.add.text(100, 40, '↺', { fontSize: '32px' }).setOrigin(0.5).setScrollFactor(0)
 
     // Left button
     this.leftBtn = this.add.circle(80, btnY, btnRadius, 0x000000, 0.5).setScrollFactor(0)
@@ -325,6 +333,7 @@ export class GameScene extends Phaser.Scene {
     this.touchState.shoot = false
     this.touchState.newTarget = false
     this.touchState.reset = false
+    this.touchState.exit = false
 
     const pointers = [this.input.activePointer, this.input.pointer1, this.input.pointer2]
     
@@ -340,11 +349,19 @@ export class GameScene extends Phaser.Scene {
       if (this.shootBtn.getBounds().contains(x, y)) this.touchState.shoot = true
       if (this.newTargetBtn.getBounds().contains(x, y)) this.touchState.newTarget = true
       if (this.resetBtn.getBounds().contains(x, y)) this.touchState.reset = true
+      if (this.exitBtn.getBounds().contains(x, y)) this.touchState.exit = true
     }
   }
 
   update() {
     this.updateTouchState()
+
+    // Exit button always works - go back to start screen
+    const exitPressed = this.touchState.exit
+    if (exitPressed && !this.exitWasPressed) {
+      this.scene.start('BootScene')
+    }
+    this.exitWasPressed = exitPressed
 
     // Reset button always works
     const resetPressed = this.touchState.reset
@@ -447,9 +464,20 @@ export class GameScene extends Phaser.Scene {
         const camRight = camLeft + this.scale.width
         const isOnScreen = clampedX > camLeft && clampedX < camRight
         
-        if (isOnScreen && now - target.lastShotTime > 8000 && Phaser.Math.Between(0, 500) < 1) {
-          this.targetShootsAtPlayer(clampedX, clampedY)
-          target.lastShotTime = now
+        if (!target.preparingToFire && isOnScreen && now - target.lastShotTime > 8000 && Phaser.Math.Between(0, 500) < 1) {
+          // Start warning - turn orange
+          target.preparingToFire = true
+          target.circle.setFillStyle(0xff8800)
+          
+          // Fire after 0.5 seconds
+          this.time.delayedCall(500, () => {
+            if (target.circle.active && target.preparingToFire) {
+              this.targetShootsAtPlayer(target.circle.x, target.circle.y)
+              target.lastShotTime = this.time.now
+              target.preparingToFire = false
+              target.circle.setFillStyle(0xff00ff) // Back to pink
+            }
+          })
         }
       }
       // Trilby mode: no movement
