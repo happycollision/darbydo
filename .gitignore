@@ -2,3 +2,6 @@ node_modules
 dist
 .DS_Store
 .gh-pages-worktree
+
+# Claude Code - ignore local settings, keep shared settings
+.claude/settings.local.json
