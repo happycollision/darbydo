@@ -4,6 +4,10 @@ set -e
 BRANCH="gh-pages"
 WORKTREE_DIR=".gh-pages-worktree"
 
+# Get the main git directory (works from worktrees too)
+MAIN_GIT_DIR=$(git rev-parse --git-common-dir)
+MAIN_REPO_DIR=$(dirname "$MAIN_GIT_DIR")
+
 # Ensure we have an initial commit on main
 if ! git rev-parse HEAD &>/dev/null; then
   echo "Creating initial commit on main..."
@@ -30,19 +34,22 @@ if ! git show-ref --verify --quiet refs/heads/$BRANCH; then
   git checkout main
 fi
 
-# Set up worktree if not already present
-if [ ! -d "$WORKTREE_DIR" ]; then
-  echo "Setting up worktree..."
-  git worktree add $WORKTREE_DIR $BRANCH
+# Use the main repo's gh-pages worktree location
+GH_PAGES_WORKTREE="$MAIN_REPO_DIR/$WORKTREE_DIR"
+
+# Set up worktree if not already present (in main repo)
+if [ ! -d "$GH_PAGES_WORKTREE" ]; then
+  echo "Setting up worktree at $GH_PAGES_WORKTREE..."
+  git worktree add "$GH_PAGES_WORKTREE" $BRANCH
 fi
 
 # Clean worktree and copy build output
-echo "Copying build to worktree..."
-rm -rf $WORKTREE_DIR/*
-cp -r dist/* $WORKTREE_DIR/
+echo "Copying build to $GH_PAGES_WORKTREE..."
+rm -rf "$GH_PAGES_WORKTREE"/*
+cp -r dist/* "$GH_PAGES_WORKTREE"/
 
 # Commit and push
-cd $WORKTREE_DIR
+cd "$GH_PAGES_WORKTREE"
 git add -A
 if git diff --cached --quiet; then
   echo "No changes to deploy."

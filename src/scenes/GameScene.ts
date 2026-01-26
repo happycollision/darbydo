@@ -668,7 +668,11 @@ export class GameScene extends Phaser.Scene {
     const x = Phaser.Math.Between(WORLD_WIDTH * 0.3, WORLD_WIDTH * 0.7)
     const y = Phaser.Math.Between(150, BASE_HEIGHT - 150)
     this.powerUp = this.add.circle(x, y, 20, 0x00ffff)
-    
+    this.physics.add.existing(this.powerUp, true) // Static body for overlap detection
+
+    // Set up physics overlap for power-up collection
+    this.physics.add.overlap(this.player, this.powerUp, this.collectPowerUp, undefined, this)
+
     this.tweens.add({
       targets: this.powerUp,
       scale: 1.3,
@@ -680,7 +684,7 @@ export class GameScene extends Phaser.Scene {
 
   createHeartPowerUps() {
     this.heartPowerUps = []
-    
+
     // Always allow gaining 7 additional hearts per level
     // Spread across multiple pickups of varying values
     const powerUpConfigs: { value: number; label: string }[] = [
@@ -690,15 +694,22 @@ export class GameScene extends Phaser.Scene {
       { value: 2, label: '❤️+2' },
       { value: 2, label: '❤️+2' },
     ] // Total: 7 hearts
-    
+
     for (const config of powerUpConfigs) {
       const x = Phaser.Math.Between(WORLD_WIDTH * 0.2, WORLD_WIDTH * 0.8)
       const y = Phaser.Math.Between(150, BASE_HEIGHT - 150)
-      
+
       const obj = this.add.text(x, y, config.label, {
         fontSize: '28px',
       }).setOrigin(0.5)
-      
+
+      // Add physics body and store value for collection callback
+      this.physics.add.existing(obj, true)
+      obj.setData('heartValue', config.value)
+
+      // Set up overlap detection
+      this.physics.add.overlap(this.player, obj, this.onHeartPowerUpCollected, undefined, this)
+
       this.tweens.add({
         targets: obj,
         scale: 1.2,
@@ -706,9 +717,25 @@ export class GameScene extends Phaser.Scene {
         yoyo: true,
         repeat: -1,
       })
-      
+
       this.heartPowerUps.push({ obj, value: config.value })
     }
+  }
+
+  onHeartPowerUpCollected(
+    _player: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    heart: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ) {
+    const heartObj = heart as Phaser.GameObjects.Text
+    if (!heartObj.active) return
+
+    const value = heartObj.getData('heartValue') as number
+    this.collectHeartPowerUp(value)
+    heartObj.destroy()
+
+    // Remove from tracking array
+    const idx = this.heartPowerUps.findIndex(h => h.obj === heartObj)
+    if (idx !== -1) this.heartPowerUps.splice(idx, 1)
   }
 
   createTouchControls() {
@@ -761,25 +788,32 @@ export class GameScene extends Phaser.Scene {
     this.touchState.pause = false
 
     const pointers = [this.input.activePointer, this.input.pointer1, this.input.pointer2]
-    
+
+    // Use distance check instead of getBounds() - much faster for circular buttons
+    const inCircle = (btn: Phaser.GameObjects.Arc, px: number, py: number) => {
+      const dx = btn.x - px
+      const dy = btn.y - py
+      return dx * dx + dy * dy < btn.radius * btn.radius
+    }
+
     for (const pointer of pointers) {
       if (!pointer.isDown) continue
-      
+
       const x = pointer.x
       const y = pointer.y
-      
-      if (this.leftBtn.getBounds().contains(x, y)) this.touchState.left = true
-      if (this.rightBtn.getBounds().contains(x, y)) this.touchState.right = true
-      if (this.jumpBtn.getBounds().contains(x, y)) this.touchState.jump = true
-      if (this.shootBtn.getBounds().contains(x, y)) this.touchState.shoot = true
-      if (this.newTargetBtn.getBounds().contains(x, y)) this.touchState.newTarget = true
-      if (this.resetBtn.getBounds().contains(x, y)) this.touchState.reset = true
-      if (this.exitBtn.getBounds().contains(x, y)) this.touchState.exit = true
-      if (this.pauseBtn.getBounds().contains(x, y)) this.touchState.pause = true
+
+      if (inCircle(this.leftBtn, x, y)) this.touchState.left = true
+      if (inCircle(this.rightBtn, x, y)) this.touchState.right = true
+      if (inCircle(this.jumpBtn, x, y)) this.touchState.jump = true
+      if (inCircle(this.shootBtn, x, y)) this.touchState.shoot = true
+      if (inCircle(this.newTargetBtn, x, y)) this.touchState.newTarget = true
+      if (inCircle(this.resetBtn, x, y)) this.touchState.reset = true
+      if (inCircle(this.exitBtn, x, y)) this.touchState.exit = true
+      if (inCircle(this.pauseBtn, x, y)) this.touchState.pause = true
     }
   }
 
-  update() {
+  update(_time: number, delta: number) {
     this.updateTouchState()
 
     // Exit button always works - go back to start screen
@@ -813,7 +847,7 @@ export class GameScene extends Phaser.Scene {
 
     // Update player state machine
     this.updatePlayerState()
-    
+
     // Always update facing indicator to stay with player
     const indicatorOffsetX = this.facingRight ? 25 : -25
     this.facingIndicator.setPosition(this.player.x + indicatorOffsetX, this.player.y)
@@ -823,7 +857,7 @@ export class GameScene extends Phaser.Scene {
     // But continue updating birds and FPS display
     if (this.playerState === PlayerState.Dead) {
       this.playerBody.setVelocity(0, 0)
-      this.updateBirds()
+      this.updateBirds(delta)
       this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`)
       return
     }
@@ -880,26 +914,16 @@ export class GameScene extends Phaser.Scene {
     }
     this.newTargetWasPressed = newTargetPressed
 
-    // Check power-up collection (disabled during level complete and boss levels)
-    if (!isLevelComplete && this.powerUp?.active && Phaser.Geom.Intersects.RectangleToRectangle(
-      this.player.getBounds(),
-      this.powerUp.getBounds()
-    )) {
-      this.collectPowerUp()
-    }
-
-    // Check heart power-up collection (always allowed, even during level complete)
-    this.checkHeartPowerUpCollection()
+    // Power-up and heart collection now handled by physics overlap (no manual checks needed)
 
     // Update target movement and behavior (disabled during level complete)
     if (!isLevelComplete && !this.isBossLevel) {
-      this.updateTargets()
+      this.updateTargets(delta)
     }
-    
-    // Update boss (if boss level)
+
+    // Update boss (if boss level) - projectile collisions handled by physics overlap
     if (this.isBossLevel && !isLevelComplete) {
       this.updateBoss()
-      this.checkBossProjectileCollisions()
     }
 
     // Check door entry during level complete
@@ -909,39 +933,42 @@ export class GameScene extends Phaser.Scene {
     this.cleanupOffscreenProjectiles()
 
     // Update birds
-    this.updateBirds()
+    this.updateBirds(delta)
 
     // Update FPS display
     this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`)
   }
 
-  updateBirds() {
+  updateBirds(delta: number) {
     const now = this.time.now
     const camLeft = this.cameras.main.scrollX
     const camRight = camLeft + BASE_WIDTH
-    
+
+    // Delta scaling factor (baseline 60fps = ~16.67ms per frame)
+    const deltaScale = delta / 16.67
+
     // Spawn new bird if it's time
     if (now >= this.nextBirdTime) {
       this.spawnBird()
       this.nextBirdTime = now + Phaser.Math.Between(3000, 8000)
     }
-    
+
     // Update existing birds and remove off-screen ones
     for (let i = this.birds.length - 1; i >= 0; i--) {
       const bird = this.birds[i]
-      
-      // Move bird
-      bird.body.x += bird.speed
+
+      // Move bird (scaled by delta for frame-rate independence)
+      bird.body.x += bird.speed * deltaScale
       bird.leftWing.x = bird.body.x - 8
       bird.rightWing.x = bird.body.x + 8
       bird.leftWing.y = bird.body.y
       bird.rightWing.y = bird.body.y
-      
+
       // Flap animation - wings rotate up and down
       const flapAngle = Math.sin(now * 0.015 + i * 2) * 0.6
       bird.leftWing.rotation = -flapAngle - 0.3
       bird.rightWing.rotation = flapAngle + 0.3
-      
+
       // Remove if off screen
       if ((bird.speed > 0 && bird.body.x > camRight + 100) || (bird.speed < 0 && bird.body.x < camLeft - 100)) {
         bird.body.destroy()
@@ -996,18 +1023,21 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  updateTargets() {
+  updateTargets(delta: number) {
     const now = this.time.now
-    
+
+    // Delta scaling factor (baseline 60fps = ~16.67ms per frame)
+    const deltaScale = delta / 16.67
+
     for (const [circle, data] of this.targetData) {
       if (!circle.active || data.state === TargetState.Destroyed) continue
-      
+
       // Update target state machine
       this.updateTargetState(circle, data, now)
-      
+
       if (this.difficulty === 'easy') {
         // Darby mode: slow movement in small area (radius 50)
-        data.moveAngle += 0.5
+        data.moveAngle += 0.5 * deltaScale
         const radius = 50
         const newX = data.originX + Math.cos(Phaser.Math.DegToRad(data.moveAngle)) * radius
         const newY = data.originY + Math.sin(Phaser.Math.DegToRad(data.moveAngle * 0.7)) * (radius * 0.5)
@@ -1016,14 +1046,14 @@ export class GameScene extends Phaser.Scene {
         // Update static body position
         const body = circle.body as Phaser.Physics.Arcade.StaticBody
         body.updateFromGameObject()
-        
+
       } else if (this.difficulty === 'hard') {
         // Marvin mode: larger movement area (radius 100) and random shooting
-        data.moveAngle += 0.8
+        data.moveAngle += 0.8 * deltaScale
         const radius = 100
         const newX = data.originX + Math.cos(Phaser.Math.DegToRad(data.moveAngle)) * radius
         const newY = data.originY + Math.sin(Phaser.Math.DegToRad(data.moveAngle * 0.6)) * (radius * 0.6)
-        
+
         // Clamp to world bounds
         const clampedX = Phaser.Math.Clamp(newX, 50, WORLD_WIDTH - 50)
         const clampedY = Phaser.Math.Clamp(newY, 100, BASE_HEIGHT - 100)
@@ -1155,20 +1185,23 @@ export class GameScene extends Phaser.Scene {
   cleanupOffscreenProjectiles() {
     const camLeft = this.cameras.main.scrollX - 100
     const camRight = this.cameras.main.scrollX + BASE_WIDTH + 100
-    
-    this.projectiles.getChildren().forEach((p) => {
-      const proj = p as Phaser.GameObjects.Rectangle
+
+    // Iterate backwards for safe removal during iteration
+    const playerProjs = this.projectiles.children.entries
+    for (let i = playerProjs.length - 1; i >= 0; i--) {
+      const proj = playerProjs[i] as Phaser.GameObjects.Rectangle
       if (proj.x < camLeft || proj.x > camRight) {
         proj.destroy()
       }
-    })
-    
-    this.enemyProjectiles.getChildren().forEach((p) => {
-      const proj = p as Phaser.GameObjects.Rectangle
+    }
+
+    const enemyProjs = this.enemyProjectiles.children.entries
+    for (let i = enemyProjs.length - 1; i >= 0; i--) {
+      const proj = enemyProjs[i] as Phaser.GameObjects.Rectangle
       if (proj.x < 0 || proj.x > WORLD_WIDTH) {
         proj.destroy()
       }
-    })
+    }
   }
 
   onWrongLetter(circle: Phaser.GameObjects.Arc, data: { label: Phaser.GameObjects.Text }) {
@@ -1302,29 +1335,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   collectPowerUp() {
+    // Guard against multiple physics callbacks
+    if (!this.powerUp?.active) return
+
     this.powerUp.destroy()
     this.sprayModeActive = true
     this.powerUpIndicator.setVisible(true)
-    
+
     this.sprayModeTimer = this.time.delayedCall(15000, () => {
       this.sprayModeActive = false
       this.powerUpIndicator.setVisible(false)
     })
-  }
-
-  checkHeartPowerUpCollection() {
-    const playerBounds = this.player.getBounds()
-    
-    for (let i = this.heartPowerUps.length - 1; i >= 0; i--) {
-      const heartPowerUp = this.heartPowerUps[i]
-      if (!heartPowerUp.obj.active) continue
-      
-      if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, heartPowerUp.obj.getBounds())) {
-        this.collectHeartPowerUp(heartPowerUp.value)
-        heartPowerUp.obj.destroy()
-        this.heartPowerUps.splice(i, 1)
-      }
-    }
   }
 
   collectHeartPowerUp(value: number) {
@@ -1482,9 +1503,42 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setScrollFactor(0).setVisible(false)
     
     this.boss.setData('revealed', false)
-    
+
     // Collider with platforms (only vertical, boss can walk through)
     this.physics.add.collider(this.boss, this.platforms)
+
+    // Set up physics overlap for projectile-boss collision
+    this.physics.add.overlap(this.projectiles, this.boss, this.onProjectileHitBossPhysics, undefined, this)
+
+    // Set up physics overlap for boss-player contact damage
+    this.physics.add.overlap(this.player, this.boss, this.onBossContactDamage, undefined, this)
+  }
+
+  onProjectileHitBossPhysics(
+    _boss: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    proj: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile
+  ) {
+    if (this.bossState === 'dead') return
+
+    const projectile = proj as Phaser.GameObjects.Rectangle
+    const projState = projectile.getData('state') as ProjectileState
+    if (projState === ProjectileState.Consumed) return
+
+    this.onProjectileHitBoss(projectile)
+  }
+
+  onBossContactDamage() {
+    // Only take contact damage when alive (not invulnerable or dead)
+    if (this.playerState !== PlayerState.Alive) return
+    if (this.bossState === 'dead') return
+
+    this.playerState = PlayerState.Invulnerable
+    this.playerStateUntil = this.time.now + this.HIT_IFRAMES_MS
+    this.takeDamage()
+
+    // Knockback away from boss
+    this.playerBody.setVelocityX(this.player.x < this.boss.x ? -300 : 300)
+    this.playerBody.setVelocityY(-200)
   }
 
   updateBoss() {
@@ -1563,19 +1617,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     
-    // Check if player touches boss (contact damage)
-    if (this.playerState === PlayerState.Alive) {
-      const playerBounds = this.player.getBounds()
-      const bossBounds = this.boss.getBounds()
-      if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, bossBounds)) {
-        this.playerState = PlayerState.Invulnerable
-        this.playerStateUntil = now + this.HIT_IFRAMES_MS
-        this.takeDamage()
-        // Knockback
-        this.playerBody.setVelocityX(this.player.x < this.boss.x ? -300 : 300)
-        this.playerBody.setVelocityY(-200)
-      }
-    }
+    // Boss contact damage now handled by physics overlap
   }
 
   bossAttack() {
@@ -1687,19 +1729,4 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  checkBossProjectileCollisions() {
-    if (!this.isBossLevel || this.bossState === 'dead') return
-    
-    const bossBounds = this.boss.getBounds()
-    
-    this.projectiles.getChildren().forEach((p) => {
-      const proj = p as Phaser.GameObjects.Rectangle
-      const projState = proj.getData('state') as ProjectileState
-      if (projState === ProjectileState.Consumed) return
-      
-      if (Phaser.Geom.Intersects.RectangleToRectangle(proj.getBounds(), bossBounds)) {
-        this.onProjectileHitBoss(proj)
-      }
-    })
-  }
 }
