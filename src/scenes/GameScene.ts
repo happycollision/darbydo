@@ -47,6 +47,7 @@ export class GameScene extends Phaser.Scene {
   private pauseLabel!: Phaser.GameObjects.Text
   private touchState = { left: false, right: false, jump: false, shoot: false, newTarget: false, reset: false, exit: false, pause: false }
   private jumpWasPressed = false
+  private isJumping = false  // Track if player is in an active jump (for variable height)
   private shootWasPressed = false
   private newTargetWasPressed = false
   private resetWasPressed = false
@@ -845,10 +846,24 @@ export class GameScene extends Phaser.Scene {
       this.playerBody.setVelocityX(0)
     }
 
-    // Jump
+    // Jump (Mario-style variable height based on button hold)
     if (jumpPressed && onGround && !this.jumpWasPressed) {
       this.playerBody.setVelocityY(-550)
+      this.isJumping = true
     }
+
+    // Variable jump height: if button released while ascending, cut the jump short
+    if (this.isJumping) {
+      if (!jumpPressed && this.playerBody.velocity.y < 0) {
+        // Cut upward velocity to create shorter jump
+        this.playerBody.setVelocityY(this.playerBody.velocity.y * 0.4)
+        this.isJumping = false
+      } else if (this.playerBody.velocity.y >= 0) {
+        // End jump state when starting to fall (not when on ground, to avoid same-frame issue)
+        this.isJumping = false
+      }
+    }
+
     this.jumpWasPressed = jumpPressed
 
     // Shoot (disabled during level complete)
