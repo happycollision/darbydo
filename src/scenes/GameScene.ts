@@ -127,6 +127,14 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' })
   }
 
+  shutdown() {
+    // Clean up timers to prevent callbacks executing on destroyed scene
+    if (this.sprayModeTimer) {
+      this.sprayModeTimer.destroy()
+      this.sprayModeTimer = undefined
+    }
+  }
+
   create(data: { letters?: string[]; name?: string; difficulty?: 'easy' | 'noJump' | 'hard'; level?: number; health?: number }) {
     // Get mode from scene data
     if (data.letters) this.letters = data.letters
@@ -857,8 +865,8 @@ export class GameScene extends Phaser.Scene {
     }
     this.newTargetWasPressed = newTargetPressed
 
-    // Check power-up collection (disabled during level complete)
-    if (!isLevelComplete && this.powerUp.active && Phaser.Geom.Intersects.RectangleToRectangle(
+    // Check power-up collection (disabled during level complete and boss levels)
+    if (!isLevelComplete && this.powerUp?.active && Phaser.Geom.Intersects.RectangleToRectangle(
       this.player.getBounds(),
       this.powerUp.getBounds()
     )) {
@@ -1316,10 +1324,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   relocateTargets() {
+    const groundSurface = BASE_HEIGHT - 120 // Top of the ground platform
+
     for (const [circle, data] of this.targetData) {
       if (circle.active) {
         const x = Phaser.Math.Between(100, WORLD_WIDTH - 100)
-        const y = Phaser.Math.Between(150, BASE_HEIGHT - 150)
+        // Trilby mode: keep targets at ground level since there's no jumping
+        const y = this.difficulty === 'noJump'
+          ? groundSurface - 50
+          : Phaser.Math.Between(150, BASE_HEIGHT - 150)
         circle.setPosition(x, y)
         data.label.setPosition(x, y)
         data.originX = x
@@ -1644,10 +1657,14 @@ export class GameScene extends Phaser.Scene {
       this.boss.setFillStyle(0x444444)
       this.bossHealthText.setText('🦍 DEFEATED!')
       
-      // Hide boss face
+      // Hide boss face and hands
       const faceParts = this.boss.getData('faceParts') as Phaser.GameObjects.Shape[]
       if (faceParts) {
         faceParts.forEach(part => part.setVisible(false))
+      }
+      const hands = this.boss.getData('hands') as Phaser.GameObjects.Rectangle[]
+      if (hands) {
+        hands.forEach(hand => hand.setVisible(false))
       }
       
       // Trigger level complete
