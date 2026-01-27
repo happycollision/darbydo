@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { gameMusic } from '../main'
 
 const WORLD_WIDTH = 2400
 const BASE_WIDTH = 800
@@ -134,6 +135,7 @@ export class GameScene extends Phaser.Scene {
       this.sprayModeTimer.destroy()
       this.sprayModeTimer = undefined
     }
+    // Note: music is NOT stopped here - it continues across level transitions
   }
 
   create(data: { letters?: string[]; name?: string; difficulty?: 'easy' | 'noJump' | 'hard'; level?: number; health?: number }) {
@@ -303,6 +305,9 @@ export class GameScene extends Phaser.Scene {
 
     // Create touch controls
     this.createTouchControls()
+
+    // Start level music
+    gameMusic.play(this.level)
   }
 
   jumpToLevel(level: number) {
@@ -819,6 +824,7 @@ export class GameScene extends Phaser.Scene {
     // Exit button always works - go back to start screen
     const exitPressed = this.touchState.exit
     if (exitPressed && !this.exitWasPressed) {
+      gameMusic.stop()
       this.scene.start('BootScene')
     }
     this.exitWasPressed = exitPressed

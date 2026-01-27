@@ -1,6 +1,10 @@
 import Phaser from 'phaser'
 import { BootScene } from './scenes/BootScene'
 import { GameScene } from './scenes/GameScene'
+import { ChiptuneMusic } from './audio/ChiptuneMusic'
+
+// Global music instance (persists across scenes)
+export const gameMusic = new ChiptuneMusic()
 
 // Poll for updates and reload when version changes
 async function checkForUpdates() {

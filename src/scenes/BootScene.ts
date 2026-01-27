@@ -99,11 +99,18 @@ export class BootScene extends Phaser.Scene {
     })
 
     marvinBtn.on('pointerdown', () => {
-      this.scene.start('GameScene', { 
-        letters: ['M', 'A', 'R', 'V', 'I', 'N'], 
+      this.scene.start('GameScene', {
+        letters: ['M', 'A', 'R', 'V', 'I', 'N'],
         name: 'MARVIN',
         difficulty: 'hard'
       })
     })
+
+    // Music attribution (bottom of screen)
+    this.add.text(width / 2, height - 20, 'Music by Drozerix (Public Domain)', {
+      fontSize: '12px',
+      fontFamily: 'Arial',
+      color: '#888888',
+    }).setOrigin(0.5)
   }
 }
